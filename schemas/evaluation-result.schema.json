@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pc-assist.invalid/schemas/evaluation-result.schema.json",
+  "title": "EvaluationResult",
+  "type": "object",
+  "required": ["scores", "decision", "reasons", "warnings", "engineVersion", "knowledgeVersion"],
+  "properties": {
+    "scores": {
+      "type": "object",
+      "required": ["hardware", "fit", "value", "condition", "longevity", "risk", "confidence", "overall"],
+      "properties": {
+        "hardware": {"type": "number", "minimum": 0, "maximum": 100},
+        "fit": {"type": "number", "minimum": 0, "maximum": 100},
+        "value": {"type": "number", "minimum": 0, "maximum": 100},
+        "condition": {"type": "number", "minimum": 0, "maximum": 100},
+        "longevity": {"type": "number", "minimum": 0, "maximum": 100},
+        "risk": {"type": "number", "minimum": 0, "maximum": 100},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 100},
+        "overall": {"type": "number", "minimum": 0, "maximum": 100}
+      },
+      "additionalProperties": false
+    },
+    "decision": {"enum": ["strong_buy", "buy", "fair", "overpriced", "avoid", "insufficient_data"]},
+    "reasons": {"type": "array", "items": {"type": "string"}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "engineVersion": {"type": "string"},
+    "knowledgeVersion": {"type": "string"}
+  },
+  "additionalProperties": false
+}

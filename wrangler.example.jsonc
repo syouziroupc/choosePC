@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pc-assist-api",
+  "main": "apps/worker/src/index.ts",
+  "compatibility_date": "2026-08-12",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pc-assist",
+      "database_id": "REPLACE_AFTER_D1_CREATION",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

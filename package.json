@@ -1,0 +1,19 @@
+{
+  "name": "pc-assist",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "validate:knowledge": "node scripts/validate_knowledge.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260729.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10",
+    "wrangler": "4.115.0"
+  }
+}

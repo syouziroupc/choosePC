@@ -1,0 +1,15 @@
+{
+  "id": "example_gaming_laptop",
+  "manufacturer": "Example",
+  "model": "Example Gaming 16",
+  "category": "gaming_laptop",
+  "facts": {
+    "gpu_tgp_w": null,
+    "cooling_score": null,
+    "display_refresh_hz": null,
+    "mux_switch": null,
+    "adapter_w": null
+  },
+  "sources": [],
+  "status": "template_only"
+}
