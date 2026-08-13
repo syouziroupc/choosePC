@@ -1,4 +1,4 @@
-import { ENGINE_VERSION, type EvaluationResult, type NormalizedPC, type UseCaseProfile } from "../../../packages/core/src/index";
+import { ENGINE_VERSION, KNOWLEDGE_VERSION, type EvaluationResult, type NormalizedPC, type UseCaseProfile } from "../../../packages/core/src/index";
 
 export interface PersistenceEnv {
   DB?: D1Database;
@@ -106,7 +106,7 @@ export async function persistRecommendation(args: {
       safeJson(args.profile),
       safeJson(args.ranked),
       ENGINE_VERSION,
-      args.knowledgeVersion,
+      KNOWLEDGE_VERSION,
     ).run();
   } catch (error) {
     console.error(JSON.stringify({ event: "persistence_error", operation: "recommendation", error: error instanceof Error ? error.message : String(error) }));
