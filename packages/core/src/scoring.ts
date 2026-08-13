@@ -56,7 +56,7 @@ export function extractMetric(metric: RequirementMetric, pc: NormalizedPC, hardw
     case "gpuCompute": return hardware.gpu?.compute ?? null;
     case "ramGb": return pc.memory?.sizeGb ?? null;
     case "storageGb": return storageTotal;
-    case "vramGb": return pc.gpu?.vramGb ?? null;
+    case "vramGb": return pc.gpu?.vramGb ?? hardware.gpuVramGb ?? null;
     case "refreshHz": return pc.display?.refreshHz ?? null;
     case "batteryHealthPct": return pc.condition.batteryHealthPct ?? null;
     case "weightKg": return pc.mobility?.weightKg ?? null;
