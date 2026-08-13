@@ -17,8 +17,14 @@ import type {
   RecommendationCandidate,
   UseCaseProfile,
 } from "../../../packages/core/src/index";
+import {
+  persistAnalytics,
+  persistEvaluation,
+  persistRecommendation,
+  type PersistenceEnv,
+} from "./persistence";
 
-interface Env {
+interface Env extends PersistenceEnv {
   URL_INSPECT_LIMITER: RateLimit;
 }
 
@@ -88,6 +94,18 @@ function getSession(request: Request): { id: string; setCookie?: string } {
     id,
     setCookie: `${SESSION_COOKIE}=${id}; Path=/; Max-Age=2592000; Secure; HttpOnly; SameSite=Lax`,
   };
+}
+
+function sessionHeaders(session: { setCookie?: string }): HeadersInit {
+  return session.setCookie ? { "set-cookie": session.setCookie } : {};
+}
+
+function defer(ctx: ExecutionContext | undefined, task: Promise<unknown>): void {
+  if (ctx) {
+    ctx.waitUntil(task);
+    return;
+  }
+  void task;
 }
 
 async function enforceUrlInspectionLimit(request: Request, env: Env): Promise<{ setCookie?: string }> {
@@ -211,7 +229,7 @@ function validRecommendationCandidates(value: unknown): value is RecommendationC
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api/v1/health") return json({ ok: true, service: "choosePC", engine: "0.2.0" });
@@ -237,24 +255,41 @@ export default {
       }
 
       if (url.pathname === "/api/v1/events" && request.method === "POST") {
+        const session = getSession(request);
         const body = await readJson<{ event?: string; dimensions?: Record<string, string | number | boolean | null> }>(request);
-        if (!body.event || !/^[a-z0-9_:-]{2,80}$/i.test(body.event)) return json({ error: "INVALID_EVENT" }, 400);
+        if (!body.event || !/^[a-z0-9_:-]{2,80}$/i.test(body.event)) return json({ error: "INVALID_EVENT" }, 400, sessionHeaders(session));
         console.log(JSON.stringify({ event: "analytics", name: body.event, dimensions: body.dimensions ?? {}, at: new Date().toISOString() }));
-        return json({ ok: true }, 202);
+        defer(ctx, persistAnalytics({
+          env,
+          sessionId: session.id,
+          eventName: body.event,
+          dimensions: body.dimensions ?? {},
+        }));
+        return json({ ok: true }, 202, sessionHeaders(session));
       }
 
       if (url.pathname === "/api/v1/sell" && request.method === "POST") {
+        const session = getSession(request);
         const body = await readJson<{ pc?: unknown; market?: unknown }>(request);
-        if (!validPc(body.pc)) return json({ error: "INVALID_PC" }, 400);
-        if (body.market != null && !validMarket(body.market)) return json({ error: "INVALID_MARKET" }, 400);
-        return json({ sale: assessSale(body.pc, body.market ?? null) });
+        if (!validPc(body.pc)) return json({ error: "INVALID_PC" }, 400, sessionHeaders(session));
+        if (body.market != null && !validMarket(body.market)) return json({ error: "INVALID_MARKET" }, 400, sessionHeaders(session));
+        const sale = assessSale(body.pc, body.market ?? null);
+        defer(ctx, persistAnalytics({
+          env,
+          sessionId: session.id,
+          eventName: "sale_assessed",
+          category: body.pc.category,
+          dimensions: { route: sale.route, confidence: sale.confidence },
+        }));
+        return json({ sale }, 200, sessionHeaders(session));
       }
 
       if (url.pathname === "/api/v1/replace" && request.method === "POST") {
+        const session = getSession(request);
         const body = await readJson<{ pc?: unknown; useCase?: string; gaming?: { resolution?: "1080p" | "1440p" | "4k"; targetFps?: 60 | 120 | 144 | 240 } }>(request);
-        if (!validPc(body.pc)) return json({ error: "INVALID_PC" }, 400);
+        if (!validPc(body.pc)) return json({ error: "INVALID_PC" }, 400, sessionHeaders(session));
         const profile = resolveProfile(body);
-        if (!profile) return json({ error: "INVALID_USE_CASE" }, 400);
+        if (!profile) return json({ error: "INVALID_USE_CASE" }, 400, sessionHeaders(session));
         const hardware = resolvePcHardware(body.pc);
         const currentEvaluation = evaluatePc({
           pc: body.pc,
@@ -265,15 +300,29 @@ export default {
           engineVersion: "0.2.0",
           knowledgeVersion: "knowledge-2026-08-13.1",
         });
-        return json({ evaluation: currentEvaluation, replacement: decideReplacement(body.pc, currentEvaluation), resolvedHardware: hardware });
+        const evaluationId = await persistEvaluation({
+          env,
+          sessionId: session.id,
+          inputType: "replacement_current",
+          pc: body.pc,
+          profile,
+          result: currentEvaluation,
+        });
+        return json({
+          evaluation: currentEvaluation,
+          evaluationId,
+          replacement: decideReplacement(body.pc, currentEvaluation),
+          resolvedHardware: hardware,
+        }, 200, sessionHeaders(session));
       }
 
       if (url.pathname === "/api/v1/evaluate" && request.method === "POST") {
+        const session = getSession(request);
         const body = await readJson<{ pc?: unknown; useCase?: string; market?: unknown; gaming?: { resolution?: "1080p" | "1440p" | "4k"; targetFps?: 60 | 120 | 144 | 240 } }>(request);
-        if (!validPc(body.pc)) return json({ error: "INVALID_PC" }, 400);
-        if (body.market != null && !validMarket(body.market)) return json({ error: "INVALID_MARKET" }, 400);
+        if (!validPc(body.pc)) return json({ error: "INVALID_PC" }, 400, sessionHeaders(session));
+        if (body.market != null && !validMarket(body.market)) return json({ error: "INVALID_MARKET" }, 400, sessionHeaders(session));
         const profile = resolveProfile(body);
-        if (!profile) return json({ error: "INVALID_USE_CASE" }, 400);
+        if (!profile) return json({ error: "INVALID_USE_CASE" }, 400, sessionHeaders(session));
         const hardware = resolvePcHardware(body.pc);
         const input: EvaluationInput = {
           pc: body.pc,
@@ -284,27 +333,52 @@ export default {
           knowledgeVersion: "knowledge-2026-08-13.1",
           context: "purchase",
         };
-        return json({ result: evaluatePc(input), resolvedHardware: hardware });
+        const result = evaluatePc(input);
+        const evaluationId = await persistEvaluation({
+          env,
+          sessionId: session.id,
+          inputType: "purchase",
+          pc: body.pc,
+          profile,
+          result,
+        });
+        return json({ result, evaluationId, resolvedHardware: hardware }, 200, sessionHeaders(session));
       }
 
       if (url.pathname === "/api/v1/recommend" && request.method === "POST") {
+        const session = getSession(request);
         const body = await readJson<{ candidates?: unknown; useCase?: string; gaming?: { resolution?: "1080p" | "1440p" | "4k"; targetFps?: 60 | 120 | 144 | 240 } }>(request);
-        if (!validRecommendationCandidates(body.candidates)) return json({ error: "INVALID_CANDIDATES" }, 400);
+        if (!validRecommendationCandidates(body.candidates)) return json({ error: "INVALID_CANDIDATES" }, 400, sessionHeaders(session));
         const profile = resolveProfile(body);
-        if (!profile) return json({ error: "INVALID_USE_CASE" }, 400);
+        if (!profile) return json({ error: "INVALID_USE_CASE" }, 400, sessionHeaders(session));
         const ranked = evaluateAndRankCandidates({
           candidates: body.candidates,
           profile,
           engineVersion: "0.2.0",
           knowledgeVersion: "knowledge-2026-08-13.1",
         });
-        return json({
+        const responseRanking = ranked.map((item, index) => ({
+          rank: index + 1,
+          candidateId: item.candidateId,
+          result: item.result,
+        }));
+        defer(ctx, persistRecommendation({
+          env,
+          sessionId: session.id,
+          profile,
           ranked: ranked.map((item, index) => ({
-            rank: index + 1,
             candidateId: item.candidateId,
-            result: item.result,
+            rank: index + 1,
+            decision: item.result.decision,
+            overall: item.result.scores.overall,
+            fit: item.result.scores.fit,
+            value: item.result.scores.value,
+            confidence: item.result.scores.confidence,
           })),
-        });
+          engineVersion: "0.2.0",
+          knowledgeVersion: "knowledge-2026-08-13.1",
+        }));
+        return json({ ranked: responseRanking }, 200, sessionHeaders(session));
       }
 
       return json({ error: "NOT_FOUND" }, 404);
