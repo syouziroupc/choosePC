@@ -1,6 +1,6 @@
 # API v0.3 bridge
 
-Public endpoints use `/api/v1`. Internal ingestion uses `/api/internal`. Public clients cannot submit custom scoring profiles or claim trusted observed-market provenance; scoring and evidence trust policy are server-managed.
+Public endpoints use `/api/v1`. Internal ingestion and operator-only metrics use `/api/internal`. Public clients cannot submit custom scoring profiles or claim trusted observed-market provenance; scoring and evidence trust policy are server-managed.
 
 ## GET /api/v1/health
 
@@ -65,13 +65,46 @@ Commercial fields are rejected at this boundary. `affiliateUrl`, commission valu
 
 Protected administration boundary for post-ranking commercial configuration. Requires a distinct `Authorization: Bearer <COMMERCIAL_ADMIN_TOKEN>`.
 
-The request contains one program and zero or more offer links. Program fields include a stable operator key, merchant, `own` / `affiliate` / `normal` type, status, optional commission metadata, disclosure text, source URL and verification timestamp. Active `own` or `affiliate` programs require non-empty disclosure text. Commission metadata is size-bounded and is stored only in `commercial_programs`.
+The request contains one program and zero or more offer links. Program fields include a stable operator key, merchant, `own` / `affiliate` / `normal` type, status, optional commission metadata, disclosure text, source URL, verification timestamp, and optional `clickRefParam`. Active `own` or `affiliate` programs require non-empty disclosure text. Commission metadata is size-bounded and is stored only in `commercial_programs`.
+
+`clickRefParam`, when present, must be a short safe query-parameter name. It identifies the merchant/affiliate sub-ID parameter that can carry a persisted outbound click ID. It is commercial metadata and is never available to the neutral ranker.
 
 Before any program/link write, every linked offer is loaded and its merchant is compared with the program merchant. A cross-merchant attachment is rejected. The D1 migration also enforces this relationship with insert/update triggers, a unique `(offer_id, program_id)` index and automatic attribution cleanup when an offer is deleted.
 
 Attribution IDs are stable per offer/program pair. Changing the destination updates the existing pair and removes stale duplicate rows. Only HTTPS destinations without embedded credentials are accepted.
 
 This administration route is downstream of ranking. The neutral offer loader does not import this module and does not query commission/program fields.
+
+## POST /api/internal/conversions/upsert
+
+Protected conversion-import boundary. Requires `Authorization: Bearer <CONVERSION_IMPORT_TOKEN>`; requests without the configured token are concealed as 404.
+
+Example:
+
+```json
+{
+  "conversion": {
+    "provider": "example-asp",
+    "externalReference": "order-123",
+    "outboundClickId": "2eacb55e-3d42-4f1c-baa5-c9d7a721e64e",
+    "occurredAt": "2026-08-13T04:00:00.000Z",
+    "orderValueJpy": 50000,
+    "commissionJpy": 1500,
+    "status": "approved",
+    "metadata": { "rawStatus": "confirmed" }
+  }
+}
+```
+
+Accepted statuses are `pending`, `approved`, `rejected`, `cancelled`, and `refunded`. Provider plus external reference produces a stable conversion ID so the same external order can be safely re-imported as its status changes. If an `outboundClickId` is supplied it must already exist; unknown clicks are rejected rather than guessed. An explicitly null/omitted click is stored as unattributed.
+
+When a click exists, its program and offer identity are copied into the conversion row. `orderValueJpy` is the API field name; it is persisted to the existing D1 `gross_order_jpy` column.
+
+## GET /api/internal/metrics/revenue
+
+Operator-only observed revenue/funnel metrics. Requires `Authorization: Bearer <COMMERCIAL_ADMIN_TOKEN>`. Optional `days` must be an integer from 1 through 365; the default is 30.
+
+The response separates observed approved and pending commission, approved order value, conversion status counts, attributed conversions, clicks by merchant type, click-to-approved-conversion rate, a 30-day-normalized approved-commission figure, and the highest-contributing commercial programs. It does not substitute planning-model assumptions for missing observed data.
 
 ## POST /api/v1/evaluate
 
@@ -122,6 +155,8 @@ Resolves an already stored offer destination from D1, records an outbound click 
 
 Commercial program selection is deterministic after rank is frozen. Only programs whose merchant matches the offer merchant are eligible. A usable own-source program is selected before affiliate, then normal; ties within a type are resolved by stable identifiers rather than database row order. If no active program is usable, the neutral product URL is used.
 
+For an active program with a configured `clickRefParam`, the Worker first persists the outbound click and only then appends that persisted click ID to the stored destination URL. If persistence fails, the redirect still proceeds but no click-reference parameter is emitted, preventing orphan attribution IDs.
+
 ## POST /api/v1/replace
 
 Uses ownership-context evaluation and returns both the current-PC evaluation and one of `keep`, `upgrade`, `repair_or_inspect`, `replace`, `insufficient_data`. The current evaluation is persisted when D1 is available.
@@ -136,8 +171,8 @@ Accepts bounded analytics event names/dimensions. Analytics are logged and, when
 
 ## Session and persistence policy
 
-A first-party opaque session cookie is used for rate limiting and aggregate funnel attribution. Evaluation, recommendation, analytics and outbound-click persistence remain non-fatal: core manual diagnosis can continue when D1 is not bound.
+A first-party opaque session cookie is used for rate limiting and aggregate funnel attribution. Evaluation, recommendation, analytics and outbound-click persistence remain non-fatal: core manual diagnosis can continue when D1 is not bound. Conversion import is different: it is an operator-only accounting path and refuses to invent an outbound attribution when a supplied click ID does not exist.
 
 ## Input and trust policy
 
-Body size and numeric fields are bounded. Arbitrary client-defined scoring profiles are rejected. Shared observed-market data can enter through the authenticated market ingestion boundary only. Neutral offer data can enter through the separately authenticated offer ingestion boundary only. Commercial metadata enters through a third, separately authenticated administration boundary and remains segregated from ranking inputs and offer ingestion. Public market calculations and user-entered comparison values are never promoted to trusted evidence.
+Body size and numeric fields are bounded. Arbitrary client-defined scoring profiles are rejected. Shared observed-market data can enter through the authenticated market ingestion boundary only. Neutral offer data can enter through the separately authenticated offer ingestion boundary only. Commercial metadata enters through a third authenticated administration boundary, and conversion data through a dedicated conversion-import authority. Commercial and conversion data remain segregated from ranking inputs. Public market calculations and user-entered comparison values are never promoted to trusted evidence.
