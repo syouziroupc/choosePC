@@ -7,10 +7,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = sorted((ROOT / "migrations").glob("*.sql"))
-CPU_CATALOG = ROOT / "knowledge" / "hardware" / "cpu" / "catalog.json"
-GPU_CATALOG = ROOT / "knowledge" / "hardware" / "gpu" / "catalog.json"
+CPU_DIR = ROOT / "knowledge" / "hardware" / "cpu"
+GPU_DIR = ROOT / "knowledge" / "hardware" / "gpu"
 SOURCE_DIR = ROOT / "knowledge" / "sources"
 GENERATOR = ROOT / "scripts" / "build_knowledge_seed.mjs"
+KNOWLEDGE_VERSION = "knowledge-2026-08-13.2"
+
+
+def load_catalog(directory: Path) -> list[dict]:
+    entries: list[dict] = []
+    for path in sorted(directory.glob("*.json")):
+        if path.name == "catalog.json":
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise RuntimeError(f"hardware file must contain an array: {path}")
+        entries.extend(payload)
+    return entries
 
 
 def count_sources() -> int:
@@ -24,8 +37,8 @@ def count_sources() -> int:
 
 
 def main() -> None:
-    cpus = json.loads(CPU_CATALOG.read_text(encoding="utf-8"))
-    gpus = json.loads(GPU_CATALOG.read_text(encoding="utf-8"))
+    cpus = load_catalog(CPU_DIR)
+    gpus = load_catalog(GPU_DIR)
     expected_sources = count_sources()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -50,14 +63,16 @@ def main() -> None:
             cpu_count = con.execute("SELECT COUNT(*) FROM hardware_cpu").fetchone()[0]
             gpu_count = con.execute("SELECT COUNT(*) FROM hardware_gpu").fetchone()[0]
             source_count = con.execute("SELECT COUNT(*) FROM source_documents").fetchone()[0]
+            evidence_count = con.execute("SELECT COUNT(*) FROM knowledge_evidence WHERE knowledge_type IN ('cpu','gpu')").fetchone()[0]
             version_count = con.execute(
                 "SELECT COUNT(*) FROM knowledge_versions WHERE version = ?",
-                ("knowledge-2026-08-13.1",),
+                (KNOWLEDGE_VERSION,),
             ).fetchone()[0]
 
             assert cpu_count == len(cpus), (cpu_count, len(cpus))
             assert gpu_count == len(gpus), (gpu_count, len(gpus))
             assert source_count == expected_sources, (source_count, expected_sources)
+            assert evidence_count >= len(cpus) + len(gpus), evidence_count
             assert version_count == 1, version_count
 
             missing_versions = con.execute(
@@ -66,10 +81,27 @@ def main() -> None:
                 UNION ALL
                 SELECT 'gpu', id FROM hardware_gpu WHERE knowledge_version <> ?
                 """,
-                ("knowledge-2026-08-13.1", "knowledge-2026-08-13.1"),
+                (KNOWLEDGE_VERSION, KNOWLEDGE_VERSION),
             ).fetchall()
             if missing_versions:
                 raise RuntimeError(f"rows with unexpected knowledge version: {missing_versions}")
+
+            missing_cpu_evidence = con.execute(
+                """
+                SELECT c.id FROM hardware_cpu c
+                LEFT JOIN knowledge_evidence e ON e.knowledge_type = 'cpu' AND e.knowledge_id = c.id
+                WHERE e.knowledge_id IS NULL
+                """
+            ).fetchall()
+            missing_gpu_evidence = con.execute(
+                """
+                SELECT g.id FROM hardware_gpu g
+                LEFT JOIN knowledge_evidence e ON e.knowledge_type = 'gpu' AND e.knowledge_id = g.id
+                WHERE e.knowledge_id IS NULL
+                """
+            ).fetchall()
+            if missing_cpu_evidence or missing_gpu_evidence:
+                raise RuntimeError(f"hardware rows without source evidence: cpu={missing_cpu_evidence}, gpu={missing_gpu_evidence}")
 
             # The seed must be idempotent because deploy/refresh jobs may safely rerun it.
             con.executescript(seed_path.read_text(encoding="utf-8"))
@@ -81,7 +113,7 @@ def main() -> None:
 
     print(
         f"Knowledge seed valid: {len(cpus)} CPUs, {len(gpus)} GPUs, "
-        f"{expected_sources} source documents; foreign keys clean and rerun-safe."
+        f"{expected_sources} source documents; evidence present, foreign keys clean and rerun-safe."
     )
 
 
