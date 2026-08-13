@@ -25,14 +25,16 @@ Repository: `syouziroupc/choosePC`
 - neutral offer persistence always clears `affiliate_url`; commercial destination/program data cannot enter through the offer-ingest route
 - neutral D1 offer candidate loader that excludes merchant identity, title, affiliate URLs, programs and commission fields before ranking
 - server-sourced `/offers/recommend` path: neutral offer load -> trusted market enrichment -> frozen rank -> commercial metadata attachment
-- post-ranking commercial resolver backed by D1 tables; commercial metadata cannot alter evaluation score or rank
+- protected post-ranking commercial administration with a third authority token, mandatory disclosure for active monetized programs and merchant/offer matching
+- D1 commercial-integrity migration enforcing unique offer/program pairs, merchant-match triggers and attribution cleanup on offer deletion
+- deterministic post-ranking commercial resolver; cross-merchant programs are ineligible and database row order cannot change the selected destination
 - DB-resolved HTTPS outbound redirect path with click attribution and no client-controlled destination URL
 - optional D1 persistence wired into evaluation, replacement, recommendation and analytics API paths
 - persistence/commercial lookup failures are non-fatal to core manual diagnosis
 - knowledge catalogs under `knowledge/` with provisional/verified status and source references
 - reproducible D1 hardware-knowledge seed generator with source/evidence rows, foreign-key validation and idempotency check in CI
 - D1 schema with provenance, market observation/estimate, recommendation, offer, commercial attribution, lead and conversion tables
-- CI regression guards for decision-policy invariants, market provenance, robust market estimation, neutral offer ingestion/query fields and commercial fallback behavior
+- CI regression guards for decision-policy invariants, market provenance, robust market estimation, neutral offer ingestion/query fields, commercial administration/integrity and monetization separation
 - Cloudflare Worker/Vite config and manual deploy workflow
 - automated desktop/mobile screenshot smoke workflow
 
@@ -47,19 +49,19 @@ Repository: `syouziroupc/choosePC`
 - Knowledge seed generation/validation is implemented, but the seed has not yet been applied to a real remote D1 database.
 - Market observations therefore continue to retain resolved CPU/GPU IDs in evidence metadata rather than relying on remote hardware foreign keys until that deployment step is verified.
 - The public UI does not yet render server-sourced ranked merchant offers or commercial outbound actions.
-- Commercial program/attribution administration is not yet exposed through a protected operator workflow.
+- There is no operator-facing UI for commercial administration; the authenticated API is the current management boundary.
 - Conversion imports and the revenue/quality dashboard are schema/design only.
 - `package-lock.json` is still generated and uploaded by CI rather than committed to the branch.
 
 ## Next implementation sequence
 
-1. Re-run CI and visual smoke on the latest Worker entry/offer-ingestion commits.
-2. Provision a development D1 database in the target Cloudflare account, bind it as `DB`, configure distinct `MARKET_INGEST_TOKEN` and `OFFER_INGEST_TOKEN` secrets, and apply migrations.
-3. Apply the generated versioned hardware-knowledge seed to D1 and verify foreign keys remotely.
+1. Re-run CI and visual smoke on the latest commercial-integrity/admin commits.
+2. Provision a development D1 database in the target Cloudflare account, bind it as `DB`, configure distinct `MARKET_INGEST_TOKEN`, `OFFER_INGEST_TOKEN` and `COMMERCIAL_ADMIN_TOKEN` secrets, and apply all migrations.
+3. Apply the generated versioned hardware-knowledge seed to D1 and verify foreign keys/triggers remotely.
 4. Build trusted retailer/marketplace observation collectors and a scheduled refresh path.
 5. Connect merchant feed/crawler synchronization to `/api/internal/offers/upsert` and add freshness/stale-offer maintenance.
-6. Add a protected commercial-program/attribution administration path that remains downstream of neutral ranking.
-7. Render `/offers/recommend` results and explicit commercial disclosures in the public UI.
-8. Add merchant-specific parser fixtures/adapters for priority retailers.
-9. Calibrate capability indices using licensed/reproducible benchmark evidence and promote entries from provisional to verified.
-10. Add revenue/quality dashboard queries, conversion imports, commit the dependency lock, deploy a development environment and perform interactive desktop/mobile validation before moving the PR out of draft.
+6. Render `/offers/recommend` results and explicit commercial disclosures/outbound actions in the public UI.
+7. Add merchant-specific parser fixtures/adapters for priority retailers.
+8. Calibrate capability indices using licensed/reproducible benchmark evidence and promote entries from provisional to verified.
+9. Add revenue/quality dashboard queries and conversion imports.
+10. Commit the generated dependency lock, deploy a development environment and perform interactive desktop/mobile validation before moving the PR out of draft.
