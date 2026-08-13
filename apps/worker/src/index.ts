@@ -1,5 +1,6 @@
 import {
   CPU_CATALOG,
+  ENGINE_VERSION,
   GPU_CATALOG,
   USE_CASES,
   assessSale,
@@ -357,7 +358,7 @@ export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     try {
-      if (url.pathname === "/api/v1/health") return json({ ok: true, service: "choosePC", engine: "0.2.0" });
+      if (url.pathname === "/api/v1/health") return json({ ok: true, service: "choosePC", engine: ENGINE_VERSION });
 
       if (url.pathname === "/api/internal/market/observe" && request.method === "POST") {
         if (!await authorizedMarketIngest(request, env)) return json({ error: "NOT_FOUND" }, 404);

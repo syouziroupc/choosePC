@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ENGINE_VERSION } from "../../../packages/core/src/index";
 import worker from "../src/index";
 
 type Limiter = { limit: (args: { key: string }) => Promise<{ success: boolean }> };
@@ -45,7 +46,7 @@ describe("Worker API boundary", () => {
     expect(response.status).toBe(200);
     const data = await response.json() as { ok: boolean; engine: string };
     expect(data.ok).toBe(true);
-    expect(data.engine).toBe("0.2.0");
+    expect(data.engine).toBe(ENGINE_VERSION);
   });
 
   it("evaluates only server-managed use cases", async () => {
