@@ -1,16 +1,23 @@
 import baseWorker from "./index";
 import {
+  upsertCommercialConfiguration,
+  type CommercialLinkInput,
+  type CommercialProgramInput,
+  type CommercialProgramStatus,
+} from "./commercial-admin";
+import {
   upsertTrustedMerchantOffer,
   type OfferStockState,
   type TrustedMerchantOffer,
 } from "./offer-store";
-import type { NormalizedPC } from "../../../packages/core/src/index";
+import type { MerchantType, NormalizedPC } from "../../../packages/core/src/index";
 import type { PersistenceEnv } from "./persistence";
 
 interface Env extends PersistenceEnv {
   URL_INSPECT_LIMITER: RateLimit;
   MARKET_INGEST_TOKEN?: string;
   OFFER_INGEST_TOKEN?: string;
+  COMMERCIAL_ADMIN_TOKEN?: string;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -49,6 +56,8 @@ const STOCK_STATES = new Set<OfferStockState>([
   "unavailable",
   "unknown",
 ]);
+const MERCHANT_TYPES = new Set<MerchantType>(["own", "affiliate", "normal"]);
+const PROGRAM_STATUSES = new Set<CommercialProgramStatus>(["active", "paused", "unknown"]);
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -147,33 +156,97 @@ function offerBatch(body: { offer?: unknown; offers?: unknown }): TrustedMerchan
   return values;
 }
 
+function validCommissionMetadata(value: unknown): value is Record<string, unknown> | null | undefined {
+  if (value == null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength <= 4096;
+  } catch {
+    return false;
+  }
+}
+
+function validProgram(value: unknown): value is CommercialProgramInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const program = value as Partial<CommercialProgramInput>;
+  if (typeof program.key !== "string" || !/^[a-zA-Z0-9._:-]{1,80}$/.test(program.key)) return false;
+  if (typeof program.merchant !== "string" || program.merchant.trim().length === 0 || program.merchant.length > 120) return false;
+  if (!program.programType || !MERCHANT_TYPES.has(program.programType)) return false;
+  if (!program.status || !PROGRAM_STATUSES.has(program.status)) return false;
+  if (!validCommissionMetadata(program.commissionMetadata)) return false;
+  if (program.disclosureText != null && (typeof program.disclosureText !== "string" || program.disclosureText.length > 1000)) return false;
+  if (program.status === "active" && program.programType !== "normal" && (!program.disclosureText || program.disclosureText.trim().length === 0)) return false;
+  if (program.sourceUrl != null && !validHttpsUrl(program.sourceUrl)) return false;
+  if (program.lastVerifiedAt != null) {
+    if (typeof program.lastVerifiedAt !== "string") return false;
+    const verifiedAt = new Date(program.lastVerifiedAt).getTime();
+    if (!Number.isFinite(verifiedAt) || verifiedAt > Date.now() + 86_400_000) return false;
+  }
+  return true;
+}
+
+function validCommercialLink(value: unknown): value is CommercialLinkInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const link = value as Partial<CommercialLinkInput>;
+  return typeof link.offerId === "string" && /^[a-zA-Z0-9._:-]{1,80}$/.test(link.offerId) && validHttpsUrl(link.destinationUrl);
+}
+
+function validCommercialPayload(body: { program?: unknown; links?: unknown }): body is { program: CommercialProgramInput; links?: CommercialLinkInput[] } {
+  if (!validProgram(body.program)) return false;
+  if (body.links == null) return true;
+  return Array.isArray(body.links) && body.links.length <= MAX_BATCH && body.links.every(validCommercialLink);
+}
+
+async function handleOfferIngest(request: Request, env: Env): Promise<Response> {
+  if (!await authorized(request, env.OFFER_INGEST_TOKEN)) return json({ error: "NOT_FOUND" }, 404);
+  if (!env.DB) return json({ error: "OFFER_DB_UNAVAILABLE" }, 503);
+  const body = await readJson<{ offer?: unknown; offers?: unknown }>(request);
+  const offers = offerBatch(body);
+  if (!offers) return json({ error: "INVALID_OFFERS" }, 400);
+
+  const stored = [];
+  for (const offer of offers) stored.push(await upsertTrustedMerchantOffer({ env, offer }));
+  return json({
+    stored,
+    createdCount: stored.filter((item) => item.created).length,
+    updatedCount: stored.filter((item) => !item.created).length,
+  });
+}
+
+async function handleCommercialAdmin(request: Request, env: Env): Promise<Response> {
+  if (!await authorized(request, env.COMMERCIAL_ADMIN_TOKEN)) return json({ error: "NOT_FOUND" }, 404);
+  if (!env.DB) return json({ error: "COMMERCIAL_DB_UNAVAILABLE" }, 503);
+  const body = await readJson<{ program?: unknown; links?: unknown }>(request);
+  if (!validCommercialPayload(body)) return json({ error: "INVALID_COMMERCIAL_CONFIGURATION" }, 400);
+  const stored = await upsertCommercialConfiguration({
+    env,
+    program: body.program,
+    links: body.links ?? [],
+  });
+  return json({ stored });
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname !== "/api/internal/offers/upsert" || request.method !== "POST") {
-      return baseWorker.fetch(request, env, ctx);
-    }
+    const isOfferIngest = url.pathname === "/api/internal/offers/upsert" && request.method === "POST";
+    const isCommercialAdmin = url.pathname === "/api/internal/commercial/upsert" && request.method === "POST";
+    if (!isOfferIngest && !isCommercialAdmin) return baseWorker.fetch(request, env, ctx);
 
     try {
-      if (!await authorized(request, env.OFFER_INGEST_TOKEN)) return json({ error: "NOT_FOUND" }, 404);
-      if (!env.DB) return json({ error: "OFFER_DB_UNAVAILABLE" }, 503);
-      const body = await readJson<{ offer?: unknown; offers?: unknown }>(request);
-      const offers = offerBatch(body);
-      if (!offers) return json({ error: "INVALID_OFFERS" }, 400);
-
-      const stored = [];
-      for (const offer of offers) stored.push(await upsertTrustedMerchantOffer({ env, offer }));
-      return json({
-        stored,
-        createdCount: stored.filter((item) => item.created).length,
-        updatedCount: stored.filter((item) => !item.created).length,
-      }, 200);
+      if (isOfferIngest) return await handleOfferIngest(request, env);
+      return await handleCommercialAdmin(request, env);
     } catch (error) {
       if (error instanceof SyntaxError) return json({ error: "INVALID_JSON" }, 400);
-      if (error instanceof Error && error.message === "REQUEST_TOO_LARGE") return json({ error: "REQUEST_TOO_LARGE" }, 400);
+      const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
+      if (message === "REQUEST_TOO_LARGE") return json({ error: message }, 400);
+      if (message === "COMMERCIAL_OFFER_NOT_FOUND") return json({ error: message }, 404);
+      if (message === "COMMERCIAL_MERCHANT_MISMATCH") return json({ error: message }, 409);
+      if (message === "INVALID_COMMERCIAL_URL" || message === "COMMISSION_METADATA_TOO_LARGE") return json({ error: message }, 400);
       console.error(JSON.stringify({
-        event: "offer_ingest_error",
-        error: error instanceof Error ? error.message : String(error),
+        event: "internal_admin_error",
+        path: url.pathname,
+        error: message,
       }));
       return json({ error: "INTERNAL_ERROR" }, 500);
     }
