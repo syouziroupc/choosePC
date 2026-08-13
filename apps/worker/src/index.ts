@@ -25,6 +25,13 @@ import {
   resolveOutboundDestination,
 } from "./commercial";
 import {
+  lookupStoredMarket,
+  persistMarketEstimate,
+  persistTrustedMarketObservation,
+  type TrustedMarketObservation,
+  type TrustedMarketSource,
+} from "./market-store";
+import {
   persistAnalytics,
   persistEvaluation,
   persistRecommendation,
@@ -33,6 +40,7 @@ import {
 
 interface Env extends PersistenceEnv {
   URL_INSPECT_LIMITER: RateLimit;
+  MARKET_INGEST_TOKEN?: string;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -40,6 +48,13 @@ const MAX_REMOTE_HTML_BYTES = 700 * 1024;
 const MAX_RECOMMENDATION_CANDIDATES = 20;
 const MAX_MARKET_OBSERVATIONS = 200;
 const SESSION_COOKIE = "pc_assist_sid";
+const TRUSTED_MARKET_SOURCES = new Set<TrustedMarketSource>([
+  "retailer_listing",
+  "marketplace_listing",
+  "sold_listing",
+  "curated_manual",
+  "own_inventory",
+]);
 const ALLOWED_REMOTE_DOMAINS = [
   "amazon.co.jp",
   "rakuten.co.jp",
@@ -89,7 +104,12 @@ function parseCookie(request: Request, name: string): string | null {
   const raw = request.headers.get("cookie") ?? "";
   for (const part of raw.split(";")) {
     const [key, ...rest] = part.trim().split("=");
-    if (key === name) return decodeURIComponent(rest.join("="));
+    if (key !== name) continue;
+    try {
+      return decodeURIComponent(rest.join("="));
+    } catch {
+      return null;
+    }
   }
   return null;
 }
@@ -199,17 +219,18 @@ function validPc(value: unknown): value is NormalizedPC {
   return true;
 }
 
-function validMarket(value: unknown): value is MarketEstimate {
+/** Public clients may submit a comparison value, but may never assert observed-market provenance. */
+function validPublicMarket(value: unknown): value is MarketEstimate {
   if (!value || typeof value !== "object") return false;
   const market = value as Partial<MarketEstimate>;
-  return finiteOrNull(market.fairPriceJpy, 1, 100_000_000) &&
-    typeof market.fairPriceJpy === "number" &&
-    finiteOrNull(market.lowPriceJpy, 1, 100_000_000) &&
-    finiteOrNull(market.highPriceJpy, 1, 100_000_000) &&
-    typeof market.sampleCount === "number" && Number.isInteger(market.sampleCount) && market.sampleCount >= 0 && market.sampleCount <= 1_000_000 &&
+  if (market.source !== "user_estimate") return false;
+  if (!finiteOrNull(market.fairPriceJpy, 1, 100_000_000) || typeof market.fairPriceJpy !== "number") return false;
+  if (!finiteOrNull(market.lowPriceJpy, 1, 100_000_000) || !finiteOrNull(market.highPriceJpy, 1, 100_000_000)) return false;
+  if (market.lowPriceJpy != null && market.lowPriceJpy > market.fairPriceJpy) return false;
+  if (market.highPriceJpy != null && market.highPriceJpy < market.fairPriceJpy) return false;
+  return typeof market.sampleCount === "number" && Number.isInteger(market.sampleCount) && market.sampleCount >= 0 && market.sampleCount <= 1_000_000 &&
     typeof market.confidence === "number" && Number.isFinite(market.confidence) && market.confidence >= 0 && market.confidence <= 100 &&
-    typeof market.ageDays === "number" && Number.isFinite(market.ageDays) && market.ageDays >= 0 && market.ageDays <= 36500 &&
-    (market.source == null || market.source === "observed_market" || market.source === "user_estimate");
+    typeof market.ageDays === "number" && Number.isFinite(market.ageDays) && market.ageDays >= 0 && market.ageDays <= 36500;
 }
 
 function validMarketObservations(value: unknown): value is MarketObservationInput[] {
@@ -226,6 +247,49 @@ function validMarketObservations(value: unknown): value is MarketObservationInpu
     if (typeof observation.sourceConfidence !== "number" || !Number.isFinite(observation.sourceConfidence) || observation.sourceConfidence < 0 || observation.sourceConfidence > 1) return false;
   }
   return true;
+}
+
+function validTrustedObservation(value: unknown): value is TrustedMarketObservation {
+  if (!value || typeof value !== "object") return false;
+  const observation = value as Partial<TrustedMarketObservation>;
+  if (!validPc(observation.pc)) return false;
+  if (typeof observation.priceJpy !== "number" || !Number.isFinite(observation.priceJpy) || observation.priceJpy < 100 || observation.priceJpy > 100_000_000) return false;
+  if (typeof observation.observedAt !== "string") return false;
+  const time = new Date(observation.observedAt).getTime();
+  if (!Number.isFinite(time) || time > Date.now() + 86_400_000) return false;
+  if (!observation.source || !TRUSTED_MARKET_SOURCES.has(observation.source)) return false;
+  if (observation.merchant != null && (typeof observation.merchant !== "string" || observation.merchant.length > 120)) return false;
+  if (observation.productUrl != null) {
+    if (typeof observation.productUrl !== "string" || observation.productUrl.length > 2048) return false;
+    try {
+      const url = new URL(observation.productUrl);
+      if (url.protocol !== "https:" || url.username || url.password) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function digest(value: string): Promise<Uint8Array> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return new Uint8Array(hash);
+}
+
+async function constantTimeTokenMatch(actual: string, expected: string): Promise<boolean> {
+  const [a, b] = await Promise.all([digest(actual), digest(expected)]);
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let index = 0; index < a.length; index += 1) difference |= a[index] ^ b[index];
+  return difference === 0;
+}
+
+async function authorizedMarketIngest(request: Request, env: Env): Promise<boolean> {
+  const secret = env.MARKET_INGEST_TOKEN;
+  if (!secret) return false;
+  const authorization = request.headers.get("authorization") ?? "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return Boolean(match?.[1]) && await constantTimeTokenMatch(match![1], secret);
 }
 
 function resolveProfile(body: { useCase?: string; gaming?: { resolution?: "1080p" | "1440p" | "4k"; targetFps?: 60 | 120 | 144 | 240 } }): UseCaseProfile | null {
@@ -249,7 +313,7 @@ function validRecommendationCandidates(value: unknown): value is RecommendationC
     if (typeof candidate.candidateId !== "string" || !/^[a-zA-Z0-9._:-]{1,80}$/.test(candidate.candidateId) || ids.has(candidate.candidateId)) return false;
     ids.add(candidate.candidateId);
     if (!validPc(candidate.pc)) return false;
-    if (candidate.market != null && !validMarket(candidate.market)) return false;
+    if (candidate.market != null && !validPublicMarket(candidate.market)) return false;
   }
   return true;
 }
@@ -270,6 +334,17 @@ export default {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api/v1/health") return json({ ok: true, service: "choosePC", engine: "0.2.0" });
+
+      if (url.pathname === "/api/internal/market/observe" && request.method === "POST") {
+        if (!await authorizedMarketIngest(request, env)) return json({ error: "NOT_FOUND" }, 404);
+        if (!env.DB) return json({ error: "MARKET_DB_UNAVAILABLE" }, 503);
+        const body = await readJson<{ observation?: unknown }>(request);
+        if (!validTrustedObservation(body.observation)) return json({ error: "INVALID_MARKET_OBSERVATION" }, 400);
+        const stored = await persistTrustedMarketObservation({ env, observation: body.observation });
+        const lookup = await lookupStoredMarket(env, body.observation.pc);
+        if (lookup?.estimate) defer(ctx, persistMarketEstimate({ env, lookup }));
+        return json({ stored, market: lookup }, stored.duplicate ? 200 : 201);
+      }
 
       const outboundId = outboundOfferId(url.pathname);
       if (outboundId && request.method === "GET") {
@@ -335,6 +410,14 @@ export default {
             confidence: market.estimate?.confidence ?? null,
           },
         }));
+        return json({ market, reusableAsObservedEvidence: false }, 200, sessionHeaders(session));
+      }
+
+      if (url.pathname === "/api/v1/market/lookup" && request.method === "POST") {
+        const session = getSession(request);
+        const body = await readJson<{ pc?: unknown }>(request);
+        if (!validPc(body.pc)) return json({ error: "INVALID_PC" }, 400, sessionHeaders(session));
+        const market = await lookupStoredMarket(env, body.pc);
         return json({ market }, 200, sessionHeaders(session));
       }
 
@@ -342,16 +425,18 @@ export default {
         const session = getSession(request);
         const body = await readJson<{ pc?: unknown; market?: unknown }>(request);
         if (!validPc(body.pc)) return json({ error: "INVALID_PC" }, 400, sessionHeaders(session));
-        if (body.market != null && !validMarket(body.market)) return json({ error: "INVALID_MARKET" }, 400, sessionHeaders(session));
-        const sale = assessSale(body.pc, body.market ?? null);
+        if (body.market != null && !validPublicMarket(body.market)) return json({ error: "INVALID_MARKET" }, 400, sessionHeaders(session));
+        const storedMarket = body.market == null ? await lookupStoredMarket(env, body.pc) : null;
+        const market = body.market ?? storedMarket?.estimate ?? null;
+        const sale = assessSale(body.pc, market);
         defer(ctx, persistAnalytics({
           env,
           sessionId: session.id,
           eventName: "sale_assessed",
           category: body.pc.category,
-          dimensions: { route: sale.route, confidence: sale.confidence },
+          dimensions: { route: sale.route, confidence: sale.confidence, market_source: market?.source ?? "none" },
         }));
-        return json({ sale }, 200, sessionHeaders(session));
+        return json({ sale, marketEvidence: storedMarket }, 200, sessionHeaders(session));
       }
 
       if (url.pathname === "/api/v1/replace" && request.method === "POST") {
@@ -390,15 +475,17 @@ export default {
         const session = getSession(request);
         const body = await readJson<{ pc?: unknown; useCase?: string; market?: unknown; gaming?: { resolution?: "1080p" | "1440p" | "4k"; targetFps?: 60 | 120 | 144 | 240 } }>(request);
         if (!validPc(body.pc)) return json({ error: "INVALID_PC" }, 400, sessionHeaders(session));
-        if (body.market != null && !validMarket(body.market)) return json({ error: "INVALID_MARKET" }, 400, sessionHeaders(session));
+        if (body.market != null && !validPublicMarket(body.market)) return json({ error: "INVALID_MARKET" }, 400, sessionHeaders(session));
         const profile = resolveProfile(body);
         if (!profile) return json({ error: "INVALID_USE_CASE" }, 400, sessionHeaders(session));
         const hardware = resolvePcHardware(body.pc);
+        const storedMarket = body.market == null ? await lookupStoredMarket(env, body.pc) : null;
+        const market = body.market ?? storedMarket?.estimate ?? null;
         const input: EvaluationInput = {
           pc: body.pc,
           profile,
           hardware,
-          market: body.market ?? null,
+          market,
           engineVersion: "0.2.0",
           knowledgeVersion: "knowledge-2026-08-13.1",
           context: "purchase",
@@ -412,7 +499,7 @@ export default {
           profile,
           result,
         });
-        return json({ result, evaluationId, resolvedHardware: hardware }, 200, sessionHeaders(session));
+        return json({ result, evaluationId, resolvedHardware: hardware, marketEvidence: storedMarket }, 200, sessionHeaders(session));
       }
 
       if (url.pathname === "/api/v1/recommend" && request.method === "POST") {
@@ -421,8 +508,19 @@ export default {
         if (!validRecommendationCandidates(body.candidates)) return json({ error: "INVALID_CANDIDATES" }, 400, sessionHeaders(session));
         const profile = resolveProfile(body);
         if (!profile) return json({ error: "INVALID_USE_CASE" }, 400, sessionHeaders(session));
+
+        const candidates: RecommendationCandidate[] = [];
+        for (const candidate of body.candidates) {
+          if (candidate.market) {
+            candidates.push(candidate);
+            continue;
+          }
+          const stored = await lookupStoredMarket(env, candidate.pc);
+          candidates.push({ ...candidate, market: stored?.estimate ?? null });
+        }
+
         const ranked = evaluateAndRankCandidates({
-          candidates: body.candidates,
+          candidates,
           profile,
           engineVersion: "0.2.0",
           knowledgeVersion: "knowledge-2026-08-13.1",
