@@ -5,6 +5,7 @@ import {
   assessSale,
   buildGamingProfile,
   decideReplacement,
+  estimateMarket,
   evaluateAndRankCandidates,
   evaluatePc,
   extractProductPage,
@@ -13,10 +14,16 @@ import {
 import type {
   EvaluationInput,
   MarketEstimate,
+  MarketObservationInput,
   NormalizedPC,
   RecommendationCandidate,
   UseCaseProfile,
 } from "../../../packages/core/src/index";
+import {
+  persistOutboundClick,
+  resolveCommercialPresentations,
+  resolveOutboundDestination,
+} from "./commercial";
 import {
   persistAnalytics,
   persistEvaluation,
@@ -31,6 +38,7 @@ interface Env extends PersistenceEnv {
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_REMOTE_HTML_BYTES = 700 * 1024;
 const MAX_RECOMMENDATION_CANDIDATES = 20;
+const MAX_MARKET_OBSERVATIONS = 200;
 const SESSION_COOKIE = "pc_assist_sid";
 const ALLOWED_REMOTE_DOMAINS = [
   "amazon.co.jp",
@@ -196,10 +204,28 @@ function validMarket(value: unknown): value is MarketEstimate {
   const market = value as Partial<MarketEstimate>;
   return finiteOrNull(market.fairPriceJpy, 1, 100_000_000) &&
     typeof market.fairPriceJpy === "number" &&
-    typeof market.sampleCount === "number" && market.sampleCount >= 0 && market.sampleCount <= 1_000_000 &&
-    typeof market.confidence === "number" && market.confidence >= 0 && market.confidence <= 100 &&
-    typeof market.ageDays === "number" && market.ageDays >= 0 && market.ageDays <= 36500 &&
+    finiteOrNull(market.lowPriceJpy, 1, 100_000_000) &&
+    finiteOrNull(market.highPriceJpy, 1, 100_000_000) &&
+    typeof market.sampleCount === "number" && Number.isInteger(market.sampleCount) && market.sampleCount >= 0 && market.sampleCount <= 1_000_000 &&
+    typeof market.confidence === "number" && Number.isFinite(market.confidence) && market.confidence >= 0 && market.confidence <= 100 &&
+    typeof market.ageDays === "number" && Number.isFinite(market.ageDays) && market.ageDays >= 0 && market.ageDays <= 36500 &&
     (market.source == null || market.source === "observed_market" || market.source === "user_estimate");
+}
+
+function validMarketObservations(value: unknown): value is MarketObservationInput[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_MARKET_OBSERVATIONS) return false;
+  const maxFutureMs = Date.now() + 86_400_000;
+  for (const item of value) {
+    if (!item || typeof item !== "object") return false;
+    const observation = item as Partial<MarketObservationInput>;
+    if (typeof observation.priceJpy !== "number" || !Number.isFinite(observation.priceJpy) || observation.priceJpy < 100 || observation.priceJpy > 100_000_000) return false;
+    if (typeof observation.observedAt !== "string") return false;
+    const observedAt = new Date(observation.observedAt).getTime();
+    if (!Number.isFinite(observedAt) || observedAt > maxFutureMs) return false;
+    if (typeof observation.similarity !== "number" || !Number.isFinite(observation.similarity) || observation.similarity < 0 || observation.similarity > 1) return false;
+    if (typeof observation.sourceConfidence !== "number" || !Number.isFinite(observation.sourceConfidence) || observation.sourceConfidence < 0 || observation.sourceConfidence > 1) return false;
+  }
+  return true;
 }
 
 function resolveProfile(body: { useCase?: string; gaming?: { resolution?: "1080p" | "1440p" | "4k"; targetFps?: 60 | 120 | 144 | 240 } }): UseCaseProfile | null {
@@ -228,11 +254,36 @@ function validRecommendationCandidates(value: unknown): value is RecommendationC
   return true;
 }
 
+function outboundOfferId(pathname: string): string | null {
+  const match = pathname.match(/^\/api\/v1\/outbound\/([^/]{1,160})$/);
+  if (!match) return null;
+  try {
+    const id = decodeURIComponent(match[1]);
+    return /^[a-zA-Z0-9._:-]{1,80}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api/v1/health") return json({ ok: true, service: "choosePC", engine: "0.2.0" });
+
+      const outboundId = outboundOfferId(url.pathname);
+      if (outboundId && request.method === "GET") {
+        const session = getSession(request);
+        const destination = await resolveOutboundDestination(env, outboundId);
+        if (!destination) return json({ error: "OFFER_NOT_AVAILABLE" }, 404, sessionHeaders(session));
+        defer(ctx, persistOutboundClick({ env, sessionId: session.id, destination }));
+        const headers = new Headers(sessionHeaders(session));
+        headers.set("location", destination.destinationUrl);
+        headers.set("cache-control", "no-store");
+        headers.set("referrer-policy", "strict-origin-when-cross-origin");
+        headers.set("x-content-type-options", "nosniff");
+        return new Response(null, { status: 302, headers });
+      }
 
       if (url.pathname === "/api/v1/catalog" && request.method === "GET") {
         return json({
@@ -266,6 +317,25 @@ export default {
           dimensions: body.dimensions ?? {},
         }));
         return json({ ok: true }, 202, sessionHeaders(session));
+      }
+
+      if (url.pathname === "/api/v1/market/estimate" && request.method === "POST") {
+        const session = getSession(request);
+        const body = await readJson<{ observations?: unknown }>(request);
+        if (!validMarketObservations(body.observations)) return json({ error: "INVALID_MARKET_OBSERVATIONS" }, 400, sessionHeaders(session));
+        const market = estimateMarket(body.observations);
+        defer(ctx, persistAnalytics({
+          env,
+          sessionId: session.id,
+          eventName: "market_estimate_computed",
+          dimensions: {
+            submitted_samples: body.observations.length,
+            accepted_samples: market.acceptedSamples,
+            rejected_samples: market.rejectedSamples,
+            confidence: market.estimate?.confidence ?? null,
+          },
+        }));
+        return json({ market }, 200, sessionHeaders(session));
       }
 
       if (url.pathname === "/api/v1/sell" && request.method === "POST") {
@@ -362,6 +432,14 @@ export default {
           candidateId: item.candidateId,
           result: item.result,
         }));
+        const commercialOffers = await resolveCommercialPresentations({
+          env,
+          ranked: ranked.map((item, index) => ({
+            offerId: item.candidateId,
+            rank: index + 1,
+            evaluationScore: item.result.scores.overall,
+          })),
+        });
         defer(ctx, persistRecommendation({
           env,
           sessionId: session.id,
@@ -378,7 +456,7 @@ export default {
           engineVersion: "0.2.0",
           knowledgeVersion: "knowledge-2026-08-13.1",
         }));
-        return json({ ranked: responseRanking }, 200, sessionHeaders(session));
+        return json({ ranked: responseRanking, commercialOffers }, 200, sessionHeaders(session));
       }
 
       return json({ error: "NOT_FOUND" }, 404);
