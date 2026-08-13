@@ -74,6 +74,39 @@ describe("Worker API boundary", () => {
     expect(response.headers.get("retry-after")).toBe("60");
   });
 
+  it("computes robust market estimates without persisting client observations", async () => {
+    const now = Date.now();
+    const obs = (priceJpy: number, ageDays: number, similarity = 0.95, sourceConfidence = 0.9) => ({
+      priceJpy,
+      observedAt: new Date(now - ageDays * 86_400_000).toISOString(),
+      similarity,
+      sourceConfidence,
+    });
+    const { response, data } = await requestJson("/api/v1/market/estimate", {
+      observations: [
+        obs(40000, 2),
+        obs(41000, 3),
+        obs(42000, 4),
+        obs(43000, 5),
+        obs(180000, 5),
+        obs(90000, 180, 0.4, 0.5),
+      ],
+    });
+    expect(response.status).toBe(200);
+    const market = data.market as { estimate: { fairPriceJpy: number } | null; rejectedSamples: number };
+    expect(market.estimate).not.toBeNull();
+    expect(market.estimate!.fairPriceJpy).toBeLessThan(50000);
+    expect(market.rejectedSamples).toBeGreaterThanOrEqual(1);
+  });
+
+  it("rejects malformed market observations", async () => {
+    const { response, data } = await requestJson("/api/v1/market/estimate", {
+      observations: [{ priceJpy: -1, observedAt: "bad", similarity: 2, sourceConfidence: 3 }],
+    });
+    expect(response.status).toBe(400);
+    expect(data.error).toBe("INVALID_MARKET_OBSERVATIONS");
+  });
+
   it("limits recommendation batch size and duplicate identifiers", async () => {
     const duplicate = await requestJson("/api/v1/recommend", {
       useCase: "office",
@@ -102,5 +135,6 @@ describe("Worker API boundary", () => {
     expect(ranked[0]).not.toHaveProperty("affiliate");
     expect(ranked[0]).not.toHaveProperty("commission");
     expect(ranked[0]).not.toHaveProperty("merchant");
+    expect(data.commercialOffers).toEqual([]);
   });
 });
