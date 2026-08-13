@@ -166,7 +166,7 @@ function elementByAttribute(html: string, attribute: "id" | "class", value: stri
   const escaped = escapeRegex(value);
   const attributePattern = attribute === "id"
     ? `id=["']${escaped}["']`
-    : `class=["'][^"']*(?:^|\\s)${escaped}(?:\\s|$)[^"']*["']`;
+    : `class=["'][^"']*\\b${escaped}\\b[^"']*["']`;
   const regex = new RegExp(`<([a-z0-9:-]+)[^>]*${attributePattern}[^>]*>([\\s\\S]{0,${MAX_ELEMENT_TEXT}}?)<\\/\\1>`, "i");
   const match = html.match(regex);
   return match?.[2] ? stripMarkup(match[2]) : null;
