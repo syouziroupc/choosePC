@@ -3,8 +3,8 @@ import { CPU_CATALOG, GPU_CATALOG, resolveHardware } from "../src/catalog";
 
 describe("extended real-world hardware coverage", () => {
   it("covers low-end, legacy, workstation and mobile-discrete segments", () => {
-    expect(CPU_CATALOG.length).toBeGreaterThanOrEqual(280);
-    expect(GPU_CATALOG.length).toBeGreaterThanOrEqual(165);
+    expect(CPU_CATALOG.length).toBeGreaterThanOrEqual(300);
+    expect(GPU_CATALOG.length).toBeGreaterThanOrEqual(170);
   });
 
   it.each([
