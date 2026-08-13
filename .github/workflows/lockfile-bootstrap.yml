@@ -1,0 +1,35 @@
+name: lockfile-bootstrap
+
+on:
+  push:
+    branches:
+      - agent/bootstrap-baseline
+    paths:
+      - .lockfile-bootstrap-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  commit-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/bootstrap-baseline
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Generate deterministic dependency lock
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Commit generated lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "package-lock.json is already current"
+            exit 0
+          fi
+          git commit -m "chore: commit dependency lock"
+          git push origin HEAD:agent/bootstrap-baseline
