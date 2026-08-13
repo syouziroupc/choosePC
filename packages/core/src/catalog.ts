@@ -3,11 +3,13 @@ import intelDesktopCpuData from "../../../knowledge/hardware/cpu/intel-desktop.j
 import intelCoreUltraCpuData from "../../../knowledge/hardware/cpu/intel-core-ultra.json";
 import intelLegacyCpuData from "../../../knowledge/hardware/cpu/intel-legacy-4th-7th.json";
 import intelLowPowerCpuData from "../../../knowledge/hardware/cpu/intel-low-power.json";
+import current2026CpuData from "../../../knowledge/hardware/cpu/current-2026.json";
 import workstationCpuData from "../../../knowledge/hardware/cpu/workstation.json";
 import amdMobileCpuData from "../../../knowledge/hardware/cpu/amd-mobile.json";
 import amdDesktopCpuData from "../../../knowledge/hardware/cpu/amd-desktop.json";
 import appleSiliconCpuData from "../../../knowledge/hardware/cpu/apple-silicon.json";
 import integratedGpuData from "../../../knowledge/hardware/gpu/integrated.json";
+import integrated2026GpuData from "../../../knowledge/hardware/gpu/integrated-2026.json";
 import nvidiaDesktopGpuData from "../../../knowledge/hardware/gpu/nvidia-desktop.json";
 import nvidiaLaptopGpuData from "../../../knowledge/hardware/gpu/nvidia-laptop.json";
 import nvidiaMainstreamLaptopGpuData from "../../../knowledge/hardware/gpu/nvidia-mainstream-laptop.json";
@@ -31,9 +33,6 @@ export interface HardwareCatalogEntry<T> {
   variant?: GpuVariant;
 }
 
-// These IDs existed before the catalog expansion and are embedded in product
-// signatures and may already exist as D1 foreign-key targets. They are stable
-// public data identities even though the split source files use systematic IDs.
 const LEGACY_IDS: Record<string, string> = {
   "Intel Core i5-8365U": "intel-i5-8365u",
   "Intel Core i5-1135G7": "intel-i5-1135g7",
@@ -64,6 +63,7 @@ export const CPU_CATALOG: HardwareCatalogEntry<CpuCapabilities>[] = withStableId
   ...intelMobileCpuData,
   ...intelDesktopCpuData,
   ...intelCoreUltraCpuData,
+  ...current2026CpuData,
   ...amdMobileCpuData,
   ...amdDesktopCpuData,
   ...appleSiliconCpuData,
@@ -72,6 +72,7 @@ export const CPU_CATALOG: HardwareCatalogEntry<CpuCapabilities>[] = withStableId
 
 export const GPU_CATALOG: HardwareCatalogEntry<GpuCapabilities>[] = withStableIds([
   ...integratedGpuData,
+  ...integrated2026GpuData,
   ...nvidiaMainstreamLaptopGpuData,
   ...nvidiaDesktopGpuData,
   ...nvidiaLaptopGpuData,
@@ -91,10 +92,8 @@ function adjustGpuByTgp(
   const [minW, maxW] = entry.tgpRangeW;
   const bounded = Math.max(minW, Math.min(maxW, tgpW));
   const position = maxW === minW ? 1 : (bounded - minW) / (maxW - minW);
-
   const multiplier = 0.74 + position * 0.26;
-  const scale = (value: number | undefined) =>
-    value == null ? undefined : Math.max(0, Math.min(100, value * multiplier));
+  const scale = (value: number | undefined) => value == null ? undefined : Math.max(0, Math.min(100, value * multiplier));
 
   return {
     capabilities: {
@@ -124,6 +123,27 @@ function bestCatalogMatch<T>(entries: readonly HardwareCatalogEntry<T>[], raw?: 
   return best?.entry ?? null;
 }
 
+function bestGpuCatalogMatch(raw?: string | null, preferredVariant?: GpuVariant | null): HardwareCatalogEntry<GpuCapabilities> | null {
+  const text = normalize(raw ?? "");
+  if (!text) return null;
+  let best: { entry: HardwareCatalogEntry<GpuCapabilities>; length: number; variantScore: number } | null = null;
+  for (const entry of GPU_CATALOG) {
+    const aliases = [...entry.aliases];
+    if (preferredVariant === "laptop" && entry.variant === "laptop") {
+      aliases.push(entry.label.replace(/\s+Laptop(?:\s+GPU)?$/i, ""));
+    }
+    for (const alias of aliases) {
+      const normalizedAlias = normalize(alias);
+      if (!normalizedAlias || !text.includes(normalizedAlias)) continue;
+      const variantScore = preferredVariant && entry.variant === preferredVariant ? 2 : entry.variant === "unknown" ? 1 : 0;
+      if (!best || normalizedAlias.length > best.length || (normalizedAlias.length === best.length && variantScore > best.variantScore)) {
+        best = { entry, length: normalizedAlias.length, variantScore };
+      }
+    }
+  }
+  return best?.entry ?? null;
+}
+
 function capByExtraction(catalogConfidence: number, extractionConfidence?: number | null): number {
   if (extractionConfidence == null) return catalogConfidence;
   return Math.min(catalogConfidence, Math.max(0, Math.min(100, extractionConfidence)));
@@ -137,10 +157,10 @@ export function resolveHardware(
   cpuRaw?: string | null,
   gpuRaw?: string | null,
   gpuTgpW?: number | null,
-  extraction?: { cpuConfidence?: number | null; gpuConfidence?: number | null },
+  extraction?: { cpuConfidence?: number | null; gpuConfidence?: number | null; gpuVariant?: GpuVariant | null },
 ): ResolvedHardware {
   const cpu = bestCatalogMatch(CPU_CATALOG, cpuRaw);
-  const gpu = bestCatalogMatch(GPU_CATALOG, gpuRaw);
+  const gpu = bestGpuCatalogMatch(gpuRaw, extraction?.gpuVariant);
   const adjustedGpu = gpu ? adjustGpuByTgp(gpu, gpuTgpW) : null;
 
   return {
