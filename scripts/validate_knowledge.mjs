@@ -5,6 +5,10 @@ const ids = new Map();
 const objects = [];
 let files = 0;
 
+function isHardwareCatalog(path) {
+  return /\/knowledge\/hardware\/(?:cpu|gpu)\/catalog\.json$/.test(path);
+}
+
 async function walk(dirUrl) {
   const entries = await readdir(dirUrl, { withFileTypes: true });
   for (const entry of entries) {
@@ -38,6 +42,20 @@ async function walk(dirUrl) {
       }
       if (object.status === "verified" && (!Array.isArray(object.sources) || object.sources.length === 0) && !object.url) {
         throw new Error(`Verified knowledge must carry source evidence: ${child.pathname}`);
+      }
+      if (isHardwareCatalog(child.pathname) && object.status === "verified") {
+        if (!Array.isArray(object.sources) || object.sources.length === 0) {
+          throw new Error(`Verified hardware capability entry requires explicit sources: ${child.pathname}#${object.id ?? "unknown"}`);
+        }
+        if (typeof object.method !== "string" || !object.method.trim()) {
+          throw new Error(`Verified hardware capability entry requires a calibration method: ${child.pathname}#${object.id ?? "unknown"}`);
+        }
+        if (/internal-relative-index/i.test(object.method)) {
+          throw new Error(`Internal relative indices cannot be promoted to verified without an external/reproducible calibration method: ${child.pathname}#${object.id ?? "unknown"}`);
+        }
+        if (typeof object.confidence !== "number" || object.confidence < 80) {
+          throw new Error(`Verified hardware capability entry requires confidence >= 80: ${child.pathname}#${object.id ?? "unknown"}`);
+        }
       }
     }
   }
