@@ -1,7 +1,12 @@
 import { CPU_CATALOG, GPU_CATALOG } from "./catalog";
+import { extractMerchantPageHints, type ParsedStockState } from "./merchant-parser";
 
 export interface ProductPageExtraction {
   sourceUrl: string;
+  merchant: string | null;
+  parserName: string;
+  parserVersion: string;
+  stockState: ParsedStockState;
   title: string | null;
   description: string | null;
   manufacturer: string | null;
@@ -158,12 +163,13 @@ function productRelevance(product: JsonLdObject, sourceUrl: string, pageTitle: s
   return score;
 }
 
-function productJsonLd(html: string, sourceUrl: string, pageTitle: string | null): JsonLdObject | null {
+function productJsonLd(html: string, sourceUrl: string, pageTitle: string | null): { product: JsonLdObject | null; count: number } {
   const products = extractJsonLdObjects(html).filter((object) => typeIncludes(object["@type"], "Product"));
-  if (products.length <= 1) return products[0] ?? null;
-  return products
-    .map((product, index) => ({ product, index, score: productRelevance(product, sourceUrl, pageTitle) }))
+  if (products.length <= 1) return { product: products[0] ?? null, count: products.length };
+  const product = products
+    .map((candidate, index) => ({ product: candidate, index, score: productRelevance(candidate, sourceUrl, pageTitle) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.product ?? null;
+  return { product, count: products.length };
 }
 
 function parseMemory(text: string): number | null {
@@ -188,7 +194,7 @@ function parseStorage(text: string): number | null {
 }
 
 function parsePrice(text: string): number | null {
-  const yen = text.match(/(?:¥|￥)\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,8})/);
+  const yen = text.match(/(?:¥|￥)\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,8})/) ?? text.match(/([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,8})\s*円/);
   return yen ? Number(yen[1].replace(/,/g, "")) : null;
 }
 
@@ -205,33 +211,53 @@ function stripMarkup(html: string, maxLength = 120_000): string {
 }
 
 export function extractProductPage(html: string, sourceUrl: string): ProductPageExtraction {
+  const merchantHints = extractMerchantPageHints(html, sourceUrl);
   const titleMeta = textFromMeta(html, ["og:title", "twitter:title"]);
   const titleTag = html.match(/<title[^>]*>([\s\S]{1,300}?)<\/title>/i)?.[1];
-  const pageTitle = titleMeta ?? (titleTag ? unescapeHtml(titleTag.replace(/<[^>]+>/g, " ").trim()) : null);
-  const product = productJsonLd(html, sourceUrl, pageTitle);
+  const pageTitle = titleMeta ?? merchantHints.title ?? (titleTag ? unescapeHtml(titleTag.replace(/<[^>]+>/g, " ").trim()) : null);
+  const selected = productJsonLd(html, sourceUrl, pageTitle);
+  const product = selected.product;
   const metaDescription = textFromMeta(html, ["og:description", "description"]);
   const structuredTitle = asString(product?.name);
   const structuredDescription = asString(product?.description);
-  const title = (structuredTitle ?? pageTitle)?.slice(0, 240) ?? null;
+  const title = (structuredTitle ?? merchantHints.title ?? pageTitle)?.slice(0, 240) ?? null;
   const description = (structuredDescription ?? metaDescription)?.slice(0, 1000) ?? null;
   const manufacturer = brandFromProduct(product);
   const model = modelFromProduct(product);
 
   const primaryText = [structuredTitle, structuredDescription, titleMeta, metaDescription].filter(Boolean).join("\n");
+  const merchantSpecText = merchantHints.specText ?? "";
   const visibleFallback = stripMarkup(html);
+  const allowPageWideFallback = selected.count <= 1;
+
   const cpuPrimary = detectCatalogLabel(primaryText, "cpu");
   const gpuPrimary = detectCatalogLabel(primaryText, "gpu");
   const ramPrimary = parseMemory(primaryText);
   const storagePrimary = parseStorage(primaryText);
-  const cpuRaw = cpuPrimary ?? detectCatalogLabel(visibleFallback, "cpu");
-  const gpuRaw = gpuPrimary ?? detectCatalogLabel(visibleFallback, "gpu");
-  const ramGb = ramPrimary ?? parseMemory(visibleFallback);
-  const storageGb = storagePrimary ?? parseStorage(visibleFallback);
+  const cpuMerchant = detectCatalogLabel(merchantSpecText, "cpu");
+  const gpuMerchant = detectCatalogLabel(merchantSpecText, "gpu");
+  const ramMerchant = parseMemory(merchantSpecText);
+  const storageMerchant = parseStorage(merchantSpecText);
+  const cpuFallback = allowPageWideFallback ? detectCatalogLabel(visibleFallback, "cpu") : null;
+  const gpuFallback = allowPageWideFallback ? detectCatalogLabel(visibleFallback, "gpu") : null;
+  const ramFallback = allowPageWideFallback ? parseMemory(visibleFallback) : null;
+  const storageFallback = allowPageWideFallback ? parseStorage(visibleFallback) : null;
+
+  const cpuRaw = cpuPrimary ?? cpuMerchant ?? cpuFallback;
+  const gpuRaw = gpuPrimary ?? gpuMerchant ?? gpuFallback;
+  const ramGb = ramPrimary ?? ramMerchant ?? ramFallback;
+  const storageGb = storagePrimary ?? storageMerchant ?? storageFallback;
   const structuredPrice = priceFromOffer(product?.offers);
-  const priceJpy = structuredPrice ?? parsePrice([titleMeta, metaDescription, visibleFallback.slice(0, 25_000)].filter(Boolean).join("\n"));
+  const fallbackPriceText = [titleMeta, metaDescription, allowPageWideFallback ? visibleFallback.slice(0, 25_000) : null].filter(Boolean).join("\n");
+  const fallbackPrice = parsePrice(fallbackPriceText);
+  const priceJpy = structuredPrice ?? merchantHints.priceJpy ?? fallbackPrice;
 
   return {
     sourceUrl,
+    merchant: merchantHints.merchant,
+    parserName: merchantHints.parserName,
+    parserVersion: merchantHints.parserVersion,
+    stockState: merchantHints.stockState,
     title,
     description,
     manufacturer,
@@ -242,14 +268,15 @@ export function extractProductPage(html: string, sourceUrl: string): ProductPage
     ramGb,
     storageGb,
     confidence: {
-      title: structuredTitle ? 98 : title ? 85 : 0,
+      title: structuredTitle ? 98 : merchantHints.title ? merchantHints.confidence.title : title ? 85 : 0,
       manufacturer: manufacturer ? 95 : 0,
       model: model ? 88 : 0,
-      price: structuredPrice ? 96 : priceJpy ? 65 : 0,
-      cpu: cpuPrimary ? 92 : cpuRaw ? 58 : 0,
-      gpu: gpuPrimary ? 92 : gpuRaw ? 58 : 0,
-      memory: ramPrimary ? 86 : ramGb ? 55 : 0,
-      storage: storagePrimary ? 86 : storageGb ? 55 : 0,
+      price: structuredPrice ? 96 : merchantHints.priceJpy ? merchantHints.confidence.price : priceJpy ? 65 : 0,
+      cpu: cpuPrimary ? 92 : cpuMerchant ? merchantHints.confidence.specs : cpuRaw ? 58 : 0,
+      gpu: gpuPrimary ? 92 : gpuMerchant ? merchantHints.confidence.specs : gpuRaw ? 58 : 0,
+      memory: ramPrimary ? 86 : ramMerchant ? merchantHints.confidence.specs : ramGb ? 55 : 0,
+      storage: storagePrimary ? 86 : storageMerchant ? merchantHints.confidence.specs : storageGb ? 55 : 0,
+      stock: merchantHints.confidence.stock,
     },
   };
 }
