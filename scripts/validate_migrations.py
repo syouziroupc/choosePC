@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import sqlite3
 from pathlib import Path
 
@@ -12,6 +11,15 @@ if not files:
 
 connection = sqlite3.connect(":memory:")
 connection.execute("PRAGMA foreign_keys = ON")
+
+
+def expect_integrity_error(sql: str, args: tuple[object, ...]) -> None:
+    try:
+        connection.execute(sql, args)
+    except sqlite3.IntegrityError:
+        return
+    raise SystemExit(f"Expected integrity error was not raised: {sql}")
+
 
 try:
     for path in files:
@@ -40,6 +48,51 @@ try:
     if "evaluation_runs" not in tables or "market_observations" not in tables or "knowledge_evidence" not in tables:
         raise SystemExit("Required core tables are missing after migrations")
 
-    print(f"Migration validation passed: {len(files)} migration(s), {len(tables)} table(s), {len(indexes)} explicit index(es).")
+    # Exercise the commercial-integrity constraints against real SQLite rather than only parsing DDL.
+    connection.execute(
+        "INSERT INTO merchant_offers (id, merchant, title, price_jpy, product_url, normalized_pc_json, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("offer-a", "Merchant A", "A", 10000, "https://example.com/a", "{}", "2026-08-13T00:00:00Z"),
+    )
+    connection.execute(
+        "INSERT INTO merchant_offers (id, merchant, title, price_jpy, product_url, normalized_pc_json, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("offer-b", "Merchant B", "B", 12000, "https://example.com/b", "{}", "2026-08-13T00:00:00Z"),
+    )
+    connection.execute(
+        "INSERT INTO commercial_programs (id, merchant, program_type, status) VALUES (?, ?, ?, ?)",
+        ("program-a", "Merchant A", "affiliate", "active"),
+    )
+    connection.execute(
+        "INSERT INTO commercial_programs (id, merchant, program_type, status) VALUES (?, ?, ?, ?)",
+        ("program-b", "Merchant B", "affiliate", "active"),
+    )
+    connection.execute(
+        "INSERT INTO attribution_links (id, offer_id, program_id, destination_url) VALUES (?, ?, ?, ?)",
+        ("attr-valid", "offer-a", "program-a", "https://example.com/out"),
+    )
+    expect_integrity_error(
+        "INSERT INTO attribution_links (id, offer_id, program_id, destination_url) VALUES (?, ?, ?, ?)",
+        ("attr-mismatch", "offer-a", "program-b", "https://example.com/bad"),
+    )
+    expect_integrity_error(
+        "INSERT INTO attribution_links (id, offer_id, program_id, destination_url) VALUES (?, ?, ?, ?)",
+        ("attr-duplicate-pair", "offer-a", "program-a", "https://example.com/duplicate"),
+    )
+    expect_integrity_error(
+        "UPDATE attribution_links SET program_id = ? WHERE id = ?",
+        ("program-b", "attr-valid"),
+    )
+    connection.execute("DELETE FROM merchant_offers WHERE id = ?", ("offer-a",))
+    remaining = connection.execute("SELECT COUNT(*) FROM attribution_links WHERE offer_id = ?", ("offer-a",)).fetchone()[0]
+    if remaining != 0:
+        raise SystemExit("Attribution cleanup trigger failed")
+
+    foreign_key_issues = connection.execute("PRAGMA foreign_key_check").fetchall()
+    if foreign_key_issues:
+        raise SystemExit(f"Foreign-key check failed after integrity tests: {foreign_key_issues}")
+
+    print(
+        f"Migration validation passed: {len(files)} migration(s), {len(tables)} table(s), "
+        f"{len(indexes)} explicit index(es); commercial integrity triggers verified."
+    )
 finally:
     connection.close()
