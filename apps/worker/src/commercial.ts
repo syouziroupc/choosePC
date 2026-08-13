@@ -118,51 +118,69 @@ export async function resolveCommercialPresentations(args: {
   ranked: readonly RankedOffer[];
 }): Promise<CommercialPresentation[]> {
   if (!args.env.DB || args.ranked.length === 0) return [];
-  const rows = await loadRows(args.env, args.ranked.map((item) => item.offerId));
-  const grouped = new Map<string, CommercialRow[]>();
-  for (const row of rows) {
-    const current = grouped.get(row.offer_id) ?? [];
-    current.push(row);
-    grouped.set(row.offer_id, current);
-  }
+  try {
+    const rows = await loadRows(args.env, args.ranked.map((item) => item.offerId));
+    const grouped = new Map<string, CommercialRow[]>();
+    for (const row of rows) {
+      const current = grouped.get(row.offer_id) ?? [];
+      current.push(row);
+      grouped.set(row.offer_id, current);
+    }
 
-  const metadata = new Map<string, CommercialOfferMetadata>();
-  const display = new Map<string, ReturnType<typeof commercialChoice>>();
-  for (const ranked of args.ranked) {
-    const choice = commercialChoice(grouped.get(ranked.offerId) ?? []);
-    if (!choice) continue;
-    metadata.set(ranked.offerId, choice.metadata);
-    display.set(ranked.offerId, choice);
-  }
+    const metadata = new Map<string, CommercialOfferMetadata>();
+    const display = new Map<string, ReturnType<typeof commercialChoice>>();
+    for (const ranked of args.ranked) {
+      const choice = commercialChoice(grouped.get(ranked.offerId) ?? []);
+      if (!choice) continue;
+      metadata.set(ranked.offerId, choice.metadata);
+      display.set(ranked.offerId, choice);
+    }
 
-  return attachCommercialMetadata(args.ranked, metadata).flatMap((resolved) => {
-    const choice = display.get(resolved.offerId);
-    if (!choice) return [];
-    return [{
-      offerId: resolved.offerId,
-      rank: resolved.rank,
-      evaluationScore: resolved.evaluationScore,
-      merchant: choice.merchant,
-      title: choice.title,
-      priceJpy: choice.priceJpy,
-      merchantType: resolved.merchantType,
-      disclosureRequired: resolved.disclosureRequired,
-      disclosureText: choice.disclosureText,
-      outboundPath: `/api/v1/outbound/${encodeURIComponent(resolved.offerId)}`,
-    }];
-  });
+    return attachCommercialMetadata(args.ranked, metadata).flatMap((resolved) => {
+      const choice = display.get(resolved.offerId);
+      if (!choice) return [];
+      return [{
+        offerId: resolved.offerId,
+        rank: resolved.rank,
+        evaluationScore: resolved.evaluationScore,
+        merchant: choice.merchant,
+        title: choice.title,
+        priceJpy: choice.priceJpy,
+        merchantType: resolved.merchantType,
+        disclosureRequired: resolved.disclosureRequired,
+        disclosureText: choice.disclosureText,
+        outboundPath: `/api/v1/outbound/${encodeURIComponent(resolved.offerId)}`,
+      }];
+    });
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "commercial_resolution_error",
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return [];
+  }
 }
 
 export async function resolveOutboundDestination(env: PersistenceEnv, offerId: string): Promise<OutboundDestination | null> {
-  const rows = await loadRows(env, [offerId]);
-  const choice = commercialChoice(rows);
-  if (!choice) return null;
-  return {
-    offerId,
-    merchant: choice.merchant,
-    merchantType: choice.metadata.merchantType,
-    destinationUrl: choice.metadata.destinationUrl,
-  };
+  if (!env.DB) return null;
+  try {
+    const rows = await loadRows(env, [offerId]);
+    const choice = commercialChoice(rows);
+    if (!choice) return null;
+    return {
+      offerId,
+      merchant: choice.merchant,
+      merchantType: choice.metadata.merchantType,
+      destinationUrl: choice.metadata.destinationUrl,
+    };
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "commercial_resolution_error",
+      offerId,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return null;
+  }
 }
 
 export async function persistOutboundClick(args: {
