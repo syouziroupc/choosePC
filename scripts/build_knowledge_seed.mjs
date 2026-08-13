@@ -10,7 +10,11 @@ function argument(name, fallback = null) {
   return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
 }
 
-const version = argument("--version", "knowledge-2026-08-13.2");
+const versionDocument = JSON.parse(await readFile(join(root, "knowledge", "version.json"), "utf8"));
+if (!versionDocument || typeof versionDocument.version !== "string" || !/^knowledge-\d{4}-\d{2}-\d{2}\.\d+$/.test(versionDocument.version)) {
+  throw new Error("Invalid knowledge/version.json");
+}
+const version = argument("--version", versionDocument.version);
 const gitSha = argument("--git-sha", process.env.GITHUB_SHA || "local");
 const output = argument("--output");
 
