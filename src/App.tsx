@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import OfferRecommendations from "./OfferRecommendations";
 
 type CatalogItem = { id: string; label: string; aliases: string[]; confidence: number; status: string };
 type Catalog = { cpus: CatalogItem[]; gpus: CatalogItem[]; useCases: Array<{ id: string; name: string }> };
@@ -298,9 +299,10 @@ export default function App() {
         {result && !replacement && <PurchaseResult result={result} positives={positives} concerns={concerns} />}
         {replacement && result && <ReplacementView result={result} replacement={replacement} />}
         {sale && <SaleView sale={sale} />}
+        {workflow === "purchase" && result && !replacement && <OfferRecommendations category={form.category} useCase={form.useCase} initialMaxPriceJpy={numberOrNull(form.price)} gaming={form.useCase === "gaming" ? { resolution: form.gamingResolution, targetFps: Number(form.targetFps) as 60 | 120 | 144 | 240 } : undefined} />}
 
         <section id="principle" className="principle">
-          <SectionHeading step="03" title="判定の考え方" text="高性能だから買い、安いから買い、という平均点方式にはしません。" />
+          <SectionHeading step={workflow === "purchase" && result && !replacement ? "04" : "03"} title="判定の考え方" text="高性能だから買い、安いから買い、という平均点方式にはしません。" />
           <ol className="principle-list"><li><strong>用途の必須条件</strong><span>必要性能を満たさないPCは安くても推奨しません。</span></li><li><strong>重大リスク</strong><span>電源不足などは平均点で打ち消しません。</span></li><li><strong>価格</strong><span>使えるPCでも高ければ「割高」と分離します。</span></li><li><strong>根拠の確かさ</strong><span>CPU・GPU・相場が不明なら情報不足と返します。</span></li></ol>
         </section>
       </main>
