@@ -88,6 +88,8 @@ function priceFromOffer(value: unknown): number | null {
   for (const offer of offers) {
     if (!offer || typeof offer !== "object") continue;
     const object = offer as JsonLdObject;
+    const currency = asString(object.priceCurrency)?.toUpperCase() ?? null;
+    if (currency && currency !== "JPY") continue;
     for (const candidate of [object.price, object.lowPrice, object.highPrice]) {
       const text = asString(candidate);
       if (!text) continue;
