@@ -61,6 +61,18 @@ Each offer contains merchant, title, canonical price, HTTPS product URL, control
 
 Commercial fields are rejected at this boundary. `affiliateUrl`, commission values, program identifiers and destination overrides cannot be supplied here. `merchant_offers.affiliate_url` is explicitly written as `NULL` on insert/update. Commercial programs and attribution destinations remain a separate post-ranking concern.
 
+## POST /api/internal/commercial/upsert
+
+Protected administration boundary for post-ranking commercial configuration. Requires a distinct `Authorization: Bearer <COMMERCIAL_ADMIN_TOKEN>`.
+
+The request contains one program and zero or more offer links. Program fields include a stable operator key, merchant, `own` / `affiliate` / `normal` type, status, optional commission metadata, disclosure text, source URL and verification timestamp. Active `own` or `affiliate` programs require non-empty disclosure text. Commission metadata is size-bounded and is stored only in `commercial_programs`.
+
+Before any program/link write, every linked offer is loaded and its merchant is compared with the program merchant. A cross-merchant attachment is rejected. The D1 migration also enforces this relationship with insert/update triggers, a unique `(offer_id, program_id)` index and automatic attribution cleanup when an offer is deleted.
+
+Attribution IDs are stable per offer/program pair. Changing the destination updates the existing pair and removes stale duplicate rows. Only HTTPS destinations without embedded credentials are accepted.
+
+This administration route is downstream of ranking. The neutral offer loader does not import this module and does not query commission/program fields.
+
 ## POST /api/v1/evaluate
 
 Request:
@@ -108,6 +120,8 @@ This is the primary backend path for production recommendation monetization.
 
 Resolves an already stored offer destination from D1, records an outbound click when possible and responds with a redirect. The caller cannot supply a destination URL. Only stored HTTPS destinations are accepted, preventing use as an arbitrary open redirect.
 
+Commercial program selection is deterministic after rank is frozen. Only programs whose merchant matches the offer merchant are eligible. A usable own-source program is selected before affiliate, then normal; ties within a type are resolved by stable identifiers rather than database row order. If no active program is usable, the neutral product URL is used.
+
 ## POST /api/v1/replace
 
 Uses ownership-context evaluation and returns both the current-PC evaluation and one of `keep`, `upgrade`, `repair_or_inspect`, `replace`, `insufficient_data`. The current evaluation is persisted when D1 is available.
@@ -126,4 +140,4 @@ A first-party opaque session cookie is used for rate limiting and aggregate funn
 
 ## Input and trust policy
 
-Body size and numeric fields are bounded. Arbitrary client-defined scoring profiles are rejected. Shared observed-market data can enter through the authenticated market ingestion boundary only. Neutral offer data can enter through the separately authenticated offer ingestion boundary only. Commercial metadata remains segregated from both ranking inputs and offer ingestion. Public market calculations and user-entered comparison values are never promoted to trusted evidence.
+Body size and numeric fields are bounded. Arbitrary client-defined scoring profiles are rejected. Shared observed-market data can enter through the authenticated market ingestion boundary only. Neutral offer data can enter through the separately authenticated offer ingestion boundary only. Commercial metadata enters through a third, separately authenticated administration boundary and remains segregated from ranking inputs and offer ingestion. Public market calculations and user-entered comparison values are never promoted to trusted evidence.
