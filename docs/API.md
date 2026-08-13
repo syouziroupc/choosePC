@@ -1,26 +1,26 @@
-# API v0.2
+# API v0.3 bridge
 
-All endpoints use `/api/v1`. Public clients cannot submit custom scoring profiles; scoring policy is server-managed.
+Public endpoints use `/api/v1`. Internal ingestion uses `/api/internal`. Public clients cannot submit custom scoring profiles or claim trusted observed-market provenance; scoring and evidence trust policy are server-managed.
 
-## GET /health
+## GET /api/v1/health
 
 Returns service and engine status.
 
-## GET /catalog
+## GET /api/v1/catalog
 
-Returns supported CPU/GPU labels and public use-case identifiers. Capability numbers are intentionally omitted.
+Returns supported CPU/GPU labels and public use-case identifiers. Internal capability numbers are intentionally omitted.
 
-## POST /url/inspect
+## POST /api/v1/url/inspect
 
 ```json
 { "url": "https://supported-merchant.example/item" }
 ```
 
-The implementation uses an HTTPS allowlist, redirect revalidation, HTML-only response checks, a bounded streamed body and per-session rate limiting. Failure does not block manual entry.
+Uses an HTTPS allowlist, redirect revalidation, HTML-only response checks, bounded streamed bodies and per-session rate limiting. Failure does not block manual entry.
 
-## POST /market/estimate
+## POST /api/v1/market/estimate
 
-Computes a robust market estimate from a bounded list of observations:
+Computes a robust estimate from a bounded set of caller-supplied observations:
 
 ```json
 {
@@ -35,9 +35,25 @@ Computes a robust market estimate from a bounded list of observations:
 }
 ```
 
-This endpoint is deliberately stateless. Client-submitted observations are **not** written into the shared market database and therefore cannot poison later users' market evidence. The estimator applies similarity/source-confidence thresholds, freshness weighting, effective-sample sizing and robust outlier rejection.
+This endpoint is deliberately stateless. Its observations are not inserted into shared market storage, and the response explicitly reports `reusableAsObservedEvidence: false`. It is a calculation aid, not a route for creating trusted evidence.
 
-## POST /evaluate
+## POST /api/v1/market/lookup
+
+```json
+{ "pc": { "...": "NormalizedPC" } }
+```
+
+Looks up server-stored observations by product signature and returns the robust market estimate, accepted/rejected sample counts and signature quality. If D1 is unavailable or no evidence exists, the market result is null rather than fabricated.
+
+## POST /api/internal/market/observe
+
+Trusted ingestion boundary for approved collectors or operator tooling. Requires `Authorization: Bearer <MARKET_INGEST_TOKEN>`; an unauthenticated request is concealed as 404.
+
+Accepted source classes are server-controlled: `retailer_listing`, `marketplace_listing`, `sold_listing`, `curated_manual`, and `own_inventory`. Source confidence is assigned server-side. Recent duplicate URL/signature observations are suppressed.
+
+Observed CPU/GPU IDs are retained as evidence metadata until the D1 hardware knowledge tables are seeded; the observation does not create invalid foreign-key references.
+
+## POST /api/v1/evaluate
 
 Request:
 
@@ -49,41 +65,57 @@ Request:
 }
 ```
 
+If `market` is supplied by a public client, its source must be `user_estimate`. A client cannot submit `source: "observed_market"`. When market is omitted, the server may enrich the evaluation from trusted D1 observations.
+
 Gaming requests may additionally supply `gaming.resolution` and `gaming.targetFps`.
 
-Response contains `result`, resolved hardware evidence and a nullable `evaluationId`. The ID is present when D1 persistence is bound and succeeds. The decision is one of `strong_buy`, `buy`, `fair`, `overpriced`, `avoid`, `insufficient_data`.
+Response contains `result`, resolved hardware evidence, optional stored market evidence and a nullable `evaluationId`. The decision is one of `strong_buy`, `buy`, `fair`, `overpriced`, `avoid`, `insufficient_data`.
 
-## POST /recommend
+## POST /api/v1/recommend
 
-Accepts up to 20 normalized candidates and evaluates every candidate with the same server-managed policy. Duplicate candidate IDs are rejected.
+Accepts up to 20 normalized caller-supplied candidates and evaluates every candidate with the same server-managed policy. Duplicate candidate IDs are rejected. Caller-supplied market values are limited to `user_estimate`; missing market evidence may be filled from trusted D1 observations.
 
-The response has two deliberately separate arrays:
+The response keeps neutral ranking and commercial presentation separate:
 
-- `ranked`: neutral ranking containing candidate ID, rank and evaluation result.
-- `commercialOffers`: optional post-ranking presentation metadata loaded from D1. Commercial metadata cannot alter rank or evaluation score.
+- `ranked`: candidate ID, frozen rank and evaluation result.
+- `commercialOffers`: optional metadata attached only after rank has been calculated.
 
-If D1 is unavailable or commercial lookup fails, `ranked` is still returned and `commercialOffers` is empty.
+Commercial metadata cannot alter rank or evaluation score. If D1/commercial lookup fails, neutral ranking still returns.
 
-## GET /outbound/:offerId
+## POST /api/v1/offers/recommend
 
-Resolves an already stored offer destination from D1, records an outbound click when possible and responds with a redirect. The client cannot supply a destination URL, and only stored HTTPS destinations are accepted. This prevents the endpoint from becoming an open redirect.
+Server-sourced recommendation route. It accepts neutral filters such as use case, device category, maximum price, condition, and gaming target.
 
-## POST /replace
+The offer loader reads only candidate ID, canonical row price, normalized PC data and observation timestamp before evaluation. Merchant identity, product title, affiliate URL, commercial program and commission data are excluded from the pre-ranking query. The sequence is:
+
+1. load eligible D1 offers using neutral filters;
+2. enrich missing market evidence from trusted stored observations;
+3. calculate and freeze evaluation ranking;
+4. resolve merchant/commercial metadata for the already-ranked offer IDs;
+5. return `ranked`, `commercialOffers`, and neutral search diagnostics.
+
+This is the primary backend path for production recommendation monetization.
+
+## GET /api/v1/outbound/:offerId
+
+Resolves an already stored offer destination from D1, records an outbound click when possible and responds with a redirect. The caller cannot supply a destination URL. Only stored HTTPS destinations are accepted, preventing use as an arbitrary open redirect.
+
+## POST /api/v1/replace
 
 Uses ownership-context evaluation and returns both the current-PC evaluation and one of `keep`, `upgrade`, `repair_or_inspect`, `replace`, `insufficient_data`. The current evaluation is persisted when D1 is available.
 
-## POST /sell
+## POST /api/v1/sell
 
-Returns a sale assessment. It does not manufacture a dealer quote. `user_estimate` input alone is insufficient for an observed-market sale valuation. The response includes the decision/route and the confidence used for analytics.
+Returns a sale assessment without inventing a dealer quote. A public `user_estimate` does not become observed-market evidence. When no public comparison value is supplied, the server may use trusted D1 observations. The response includes the decision/route and confidence used for analytics.
 
-## POST /events
+## POST /api/v1/events
 
 Accepts bounded analytics event names/dimensions. Analytics are logged and, when D1 is available, persisted separately. Analytics cannot alter evaluation.
 
 ## Session and persistence policy
 
-A first-party opaque session cookie is used for rate limiting and aggregate funnel attribution. Evaluation, recommendation, analytics and outbound-click persistence are optional: core diagnosis continues to operate when D1 is not bound.
+A first-party opaque session cookie is used for rate limiting and aggregate funnel attribution. Evaluation, recommendation, analytics and outbound-click persistence remain non-fatal: core manual diagnosis can continue when D1 is not bound.
 
-## Input policy
+## Input and trust policy
 
-Body size is bounded. Numeric PC fields and market evidence are range-checked. Arbitrary client-defined scoring profiles are rejected by design. Shared market observations are never accepted directly from this public API.
+Body size and numeric fields are bounded. Arbitrary client-defined scoring profiles are rejected. Shared observed-market data can enter through the authenticated internal ingestion boundary only. Public market calculations and user-entered comparison values are never promoted to trusted evidence.
