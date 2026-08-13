@@ -27,6 +27,8 @@ jobs:
       - run: npm run validate:knowledge
       - name: Validate D1 migrations
         run: python3 scripts/validate_migrations.py
+      - name: Validate reproducible D1 knowledge seed
+        run: python3 scripts/validate_knowledge_seed.py
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
