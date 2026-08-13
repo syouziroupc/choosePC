@@ -15,6 +15,19 @@ interface Env extends PersistenceEnv {
 
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_BATCH = 25;
+const FORBIDDEN_COMMERCIAL_FIELDS = new Set([
+  "affiliateUrl",
+  "affiliate_url",
+  "commission",
+  "commissionRate",
+  "commission_rate",
+  "commercialProgram",
+  "commercial_program",
+  "programId",
+  "program_id",
+  "destinationUrl",
+  "destination_url",
+]);
 const DEVICE_CATEGORIES = new Set([
   "general_laptop",
   "mobile_laptop",
@@ -105,7 +118,9 @@ function validHttpsUrl(raw: unknown): raw is string {
 }
 
 function validOffer(value: unknown): value is TrustedMerchantOffer {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const raw = value as Record<string, unknown>;
+  if ([...FORBIDDEN_COMMERCIAL_FIELDS].some((field) => Object.prototype.hasOwnProperty.call(raw, field))) return false;
   const offer = value as Partial<TrustedMerchantOffer>;
   if (typeof offer.merchant !== "string" || offer.merchant.trim().length === 0 || offer.merchant.length > 120) return false;
   if (typeof offer.title !== "string" || offer.title.trim().length === 0 || offer.title.length > 500) return false;
