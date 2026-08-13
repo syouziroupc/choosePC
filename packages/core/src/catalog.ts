@@ -25,22 +25,49 @@ export interface HardwareCatalogEntry<T> {
   variant?: GpuVariant;
 }
 
-export const CPU_CATALOG: HardwareCatalogEntry<CpuCapabilities>[] = [
+// These IDs existed before the catalog expansion and are embedded in product
+// signatures and may already exist as D1 foreign-key targets. They are stable
+// public data identities even though the split source files use systematic IDs.
+const LEGACY_IDS: Record<string, string> = {
+  "Intel Core i5-8365U": "intel-i5-8365u",
+  "Intel Core i5-1135G7": "intel-i5-1135g7",
+  "Intel Core i5-1235U": "intel-i5-1235u",
+  "AMD Ryzen 5 5600U": "amd-r5-5600u",
+  "AMD Ryzen 5 5600H": "amd-r5-5600h",
+  "Intel Core i5-12400F": "intel-i5-12400f",
+  "AMD Ryzen 5 7600": "amd-r5-7600",
+  "AMD Ryzen 7 7800X3D": "amd-r7-7800x3d",
+  "Intel UHD Graphics 620": "intel-uhd-620",
+  "Intel Iris Xe Graphics": "intel-iris-xe",
+  "GeForce GTX 1650 Laptop": "nvidia-gtx1650-laptop",
+  "GeForce RTX 3050 Laptop": "nvidia-rtx3050-laptop",
+  "GeForce RTX 3060 Laptop": "nvidia-rtx3060-laptop",
+  "GeForce RTX 4060 Laptop": "nvidia-rtx4060-laptop",
+  "GeForce RTX 5060 Laptop": "nvidia-rtx5060-laptop",
+  "GeForce RTX 3060": "nvidia-rtx3060-desktop",
+  "GeForce RTX 4060": "nvidia-rtx4060-desktop",
+};
+
+function withStableIds<T>(entries: readonly HardwareCatalogEntry<T>[]): HardwareCatalogEntry<T>[] {
+  return entries.map((entry) => ({ ...entry, id: LEGACY_IDS[entry.label] ?? entry.id }));
+}
+
+export const CPU_CATALOG: HardwareCatalogEntry<CpuCapabilities>[] = withStableIds([
   ...intelMobileCpuData,
   ...intelDesktopCpuData,
   ...intelCoreUltraCpuData,
   ...amdMobileCpuData,
   ...amdDesktopCpuData,
   ...appleSiliconCpuData,
-] as HardwareCatalogEntry<CpuCapabilities>[];
+] as HardwareCatalogEntry<CpuCapabilities>[]);
 
-export const GPU_CATALOG: HardwareCatalogEntry<GpuCapabilities>[] = [
+export const GPU_CATALOG: HardwareCatalogEntry<GpuCapabilities>[] = withStableIds([
   ...integratedGpuData,
   ...nvidiaDesktopGpuData,
   ...nvidiaLaptopGpuData,
   ...amdRadeonGpuData,
   ...intelArcGpuData,
-] as HardwareCatalogEntry<GpuCapabilities>[];
+] as HardwareCatalogEntry<GpuCapabilities>[]);
 
 function adjustGpuByTgp(
   entry: HardwareCatalogEntry<GpuCapabilities>,
@@ -53,9 +80,6 @@ function adjustGpuByTgp(
   const bounded = Math.max(minW, Math.min(maxW, tgpW));
   const position = maxW === minW ? 1 : (bounded - minW) / (maxW - minW);
 
-  // Conservative relative model for internal ranking only. It is deliberately
-  // not exposed as a linear FPS claim; real laptop behaviour also depends on
-  // cooling, Dynamic Boost, CPU limits and chassis design.
   const multiplier = 0.74 + position * 0.26;
   const scale = (value: number | undefined) =>
     value == null ? undefined : Math.max(0, Math.min(100, value * multiplier));
