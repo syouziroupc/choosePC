@@ -16,8 +16,8 @@ function limiter() {
   return { async limit() { return { success: true }; } };
 }
 
-function request(body: unknown, token = "offer-secret") {
-  return new Request("https://choosepc.test/api/internal/offers/upsert", {
+function internalRequest(path: string, body: unknown, token: string) {
+  return new Request(`https://choosepc.test${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -27,7 +27,7 @@ function request(body: unknown, token = "offer-secret") {
   });
 }
 
-function fakeDb() {
+function fakeDb(offerMerchant: string | null = null) {
   const writes: Array<{ sql: string; args: unknown[] }> = [];
   return {
     writes,
@@ -36,7 +36,10 @@ function fakeDb() {
         return {
           bind(...args: unknown[]) {
             return {
-              async first() { return null; },
+              async first() {
+                if (/SELECT merchant FROM merchant_offers/i.test(sql) && offerMerchant) return { merchant: offerMerchant };
+                return null;
+              },
               async run() {
                 writes.push({ sql, args });
                 return { success: true };
@@ -59,7 +62,18 @@ const validOffer = {
   observedAt: new Date().toISOString(),
 };
 
-describe("Worker internal offer ingestion entry", () => {
+const validProgram = {
+  key: "affiliate-main",
+  merchant: "Example Shop",
+  programType: "affiliate",
+  status: "active",
+  commissionMetadata: { model: "percentage", rate: 0.03 },
+  disclosureText: "広告リンクを含みます。",
+  sourceUrl: "https://partner.example/program",
+  lastVerifiedAt: new Date().toISOString(),
+};
+
+describe("Worker internal administration entry", () => {
   it("delegates ordinary public API requests to the base worker", async () => {
     const response = await entry.fetch(
       new Request("https://choosepc.test/api/v1/health"),
@@ -70,19 +84,19 @@ describe("Worker internal offer ingestion entry", () => {
     expect(await response.json()).toMatchObject({ ok: true, service: "choosePC" });
   });
 
-  it("conceals the ingestion route without the configured token", async () => {
+  it("conceals the neutral offer ingestion route without the configured token", async () => {
     const response = await entry.fetch(
-      request({ offer: validOffer }, "wrong"),
+      internalRequest("/api/internal/offers/upsert", { offer: validOffer }, "wrong"),
       { URL_INSPECT_LIMITER: limiter(), OFFER_INGEST_TOKEN: "offer-secret" } as never,
       {} as ExecutionContext,
     );
     expect(response.status).toBe(404);
   });
 
-  it("rejects commercial metadata at the neutral ingestion boundary", async () => {
+  it("rejects commercial metadata at the neutral offer ingestion boundary", async () => {
     const { DB } = fakeDb();
     const response = await entry.fetch(
-      request({ offer: { ...validOffer, affiliateUrl: "https://affiliate.example/item" } }),
+      internalRequest("/api/internal/offers/upsert", { offer: { ...validOffer, affiliateUrl: "https://affiliate.example/item" } }, "offer-secret"),
       { URL_INSPECT_LIMITER: limiter(), OFFER_INGEST_TOKEN: "offer-secret", DB } as never,
       {} as ExecutionContext,
     );
@@ -93,7 +107,7 @@ describe("Worker internal offer ingestion entry", () => {
   it("upserts a validated neutral offer with an authenticated token", async () => {
     const { DB, writes } = fakeDb();
     const response = await entry.fetch(
-      request({ offer: validOffer }),
+      internalRequest("/api/internal/offers/upsert", { offer: validOffer }, "offer-secret"),
       { URL_INSPECT_LIMITER: limiter(), OFFER_INGEST_TOKEN: "offer-secret", DB } as never,
       {} as ExecutionContext,
     );
@@ -105,5 +119,60 @@ describe("Worker internal offer ingestion entry", () => {
     const insert = writes.find((item) => /INSERT INTO merchant_offers/i.test(item.sql));
     expect(insert).toBeTruthy();
     expect(insert!.sql).toMatch(/affiliate_url = NULL/i);
+  });
+
+  it("conceals commercial administration behind a separate token", async () => {
+    const response = await entry.fetch(
+      internalRequest("/api/internal/commercial/upsert", { program: validProgram, links: [] }, "offer-secret"),
+      { URL_INSPECT_LIMITER: limiter(), COMMERCIAL_ADMIN_TOKEN: "commercial-secret" } as never,
+      {} as ExecutionContext,
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("requires disclosure for an active monetized program", async () => {
+    const { DB } = fakeDb("Example Shop");
+    const response = await entry.fetch(
+      internalRequest("/api/internal/commercial/upsert", {
+        program: { ...validProgram, disclosureText: "" },
+        links: [],
+      }, "commercial-secret"),
+      { URL_INSPECT_LIMITER: limiter(), COMMERCIAL_ADMIN_TOKEN: "commercial-secret", DB } as never,
+      {} as ExecutionContext,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "INVALID_COMMERCIAL_CONFIGURATION" });
+  });
+
+  it("refuses to attach a program to an offer from another merchant", async () => {
+    const { DB } = fakeDb("Different Shop");
+    const response = await entry.fetch(
+      internalRequest("/api/internal/commercial/upsert", {
+        program: validProgram,
+        links: [{ offerId: "offer-1", destinationUrl: "https://affiliate.example/item" }],
+      }, "commercial-secret"),
+      { URL_INSPECT_LIMITER: limiter(), COMMERCIAL_ADMIN_TOKEN: "commercial-secret", DB } as never,
+      {} as ExecutionContext,
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "COMMERCIAL_MERCHANT_MISMATCH" });
+  });
+
+  it("stores post-ranking commercial configuration with an authenticated admin token", async () => {
+    const { DB, writes } = fakeDb("Example Shop");
+    const response = await entry.fetch(
+      internalRequest("/api/internal/commercial/upsert", {
+        program: validProgram,
+        links: [{ offerId: "offer-1", destinationUrl: "https://affiliate.example/item" }],
+      }, "commercial-secret"),
+      { URL_INSPECT_LIMITER: limiter(), COMMERCIAL_ADMIN_TOKEN: "commercial-secret", DB } as never,
+      {} as ExecutionContext,
+    );
+    expect(response.status).toBe(200);
+    const data = await response.json() as { stored: { programId: string; linkIds: string[] } };
+    expect(data.stored.programId).toMatch(/^program-[a-f0-9]{40}$/);
+    expect(data.stored.linkIds[0]).toMatch(/^attr-[a-f0-9]{40}$/);
+    expect(writes.some((item) => /INSERT INTO commercial_programs/i.test(item.sql))).toBe(true);
+    expect(writes.some((item) => /INSERT INTO attribution_links/i.test(item.sql))).toBe(true);
   });
 });
