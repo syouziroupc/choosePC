@@ -1,0 +1,60 @@
+name: Knowledge data update
+about: Add or verify CPU, GPU, device, game or market-rule knowledge
+labels: [knowledge]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Knowledge type
+      options:
+        - CPU
+        - GPU
+        - Laptop / gaming laptop
+        - Desktop / BTO / workstation
+        - Game requirement
+        - Use-case rule
+        - Market rule
+        - Source correction
+    validations:
+      required: true
+  - type: input
+    id: identity
+    attributes:
+      label: Canonical model / identity
+      placeholder: e.g. GeForce RTX 5060 Laptop GPU
+    validations:
+      required: true
+  - type: textarea
+    id: facts
+    attributes:
+      label: Facts to add or change
+      description: Separate factual specifications from PC ASSIST internal capability indices.
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Primary / licensed sources
+      description: Prefer manufacturer documentation, official software requirements, licensed benchmark data, or reproducible measurements. Include URLs and retrieval date.
+    validations:
+      required: true
+  - type: dropdown
+    id: status
+    attributes:
+      label: Proposed evidence status
+      options:
+        - provisional
+        - verified
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Evidence rules
+      options:
+        - label: I did not copy a proprietary benchmark database without the required reuse/commercial license.
+          required: true
+        - label: Unknown values remain unknown rather than inferred from product naming alone.
+          required: true
+        - label: Any proposed verified value has explicit source evidence.
+          required: true
