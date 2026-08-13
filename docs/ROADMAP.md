@@ -2,7 +2,7 @@
 
 ## Phase 0 — repository foundation
 
-Design baseline, CI, dependency lock, D1 schema/migrations and regression fixtures. **Implemented; deployment binding/validation remains.**
+Design baseline, CI, D1 schema/migrations and regression fixtures. **Implemented; dependency lock commit and real deployment binding remain.**
 
 ## v0.1 — deterministic manual evaluation
 
@@ -14,7 +14,7 @@ Secure fetch boundary, JSON-LD/OpenGraph/generic parser, supported-domain allowl
 
 ## v0.3 — offer search and monetization
 
-Robust market estimator, neutral candidate ranking, frozen-rank commercial resolver, outbound attribution and disclosure boundary. **Core ranking/commercial separation is implemented.** Remaining work is trusted market ingestion, live merchant-offer ingestion/search, D1 deployment binding and public offer UI.
+Robust market estimator, trusted-vs-user evidence boundary, neutral D1 offer candidate loader, server-sourced offer ranking, frozen-rank commercial resolver and outbound attribution. **Backend path is implemented.** Remaining work is live trusted observation ingestion, live merchant-offer synchronization, D1 deployment binding and public offer UI.
 
 ## v0.4 — own sales
 
@@ -26,7 +26,7 @@ KEEP / UPGRADE / REPAIR / REPLACE and RAM/SSD/battery routes. Core decision engi
 
 ## v0.6 — selling assistant
 
-Observed-market evidence, price range/confidence, sale-route recommendation and optional own buyback. Core sale assessment is implemented and refuses to invent dealer quotes; shared market ingestion and buyback lead flow remain.
+Observed-market evidence, price range/confidence, sale-route recommendation and optional own buyback. Core sale assessment plus trusted stored-market lookup are implemented; live observation collection and buyback lead flow remain.
 
 ## v0.7 — gaming depth
 
@@ -34,7 +34,7 @@ Game profiles, gaming-laptop TGP/cooling/display depth and verified benchmark ob
 
 ## v0.8 — market refresh
 
-Trusted scheduled observations, Queue/Workflow refresh pipeline, outlier handling and freshness metrics. Robust estimation exists; automated trusted ingestion remains.
+Trusted scheduled observations, Queue/Workflow refresh pipeline, outlier handling and freshness metrics. Robust estimation and authenticated ingestion boundary exist; automated collection/scheduling remains.
 
 ## v0.9 — revenue/quality dashboard
 
