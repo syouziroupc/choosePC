@@ -1,14 +1,19 @@
 import intelMobileCpuData from "../../../knowledge/hardware/cpu/intel-mobile.json";
 import intelDesktopCpuData from "../../../knowledge/hardware/cpu/intel-desktop.json";
 import intelCoreUltraCpuData from "../../../knowledge/hardware/cpu/intel-core-ultra.json";
+import intelLegacyCpuData from "../../../knowledge/hardware/cpu/intel-legacy-4th-7th.json";
+import workstationCpuData from "../../../knowledge/hardware/cpu/workstation.json";
 import amdMobileCpuData from "../../../knowledge/hardware/cpu/amd-mobile.json";
 import amdDesktopCpuData from "../../../knowledge/hardware/cpu/amd-desktop.json";
 import appleSiliconCpuData from "../../../knowledge/hardware/cpu/apple-silicon.json";
 import integratedGpuData from "../../../knowledge/hardware/gpu/integrated.json";
 import nvidiaDesktopGpuData from "../../../knowledge/hardware/gpu/nvidia-desktop.json";
 import nvidiaLaptopGpuData from "../../../knowledge/hardware/gpu/nvidia-laptop.json";
+import nvidiaMainstreamLaptopGpuData from "../../../knowledge/hardware/gpu/nvidia-mainstream-laptop.json";
 import amdRadeonGpuData from "../../../knowledge/hardware/gpu/amd-radeon.json";
+import amdRadeonLaptopGpuData from "../../../knowledge/hardware/gpu/amd-radeon-laptop.json";
 import intelArcGpuData from "../../../knowledge/hardware/gpu/intel-arc.json";
+import workstationGpuData from "../../../knowledge/hardware/gpu/workstation.json";
 import type { CpuCapabilities, GpuCapabilities, GpuVariant, ResolvedHardware } from "./types";
 
 export interface HardwareCatalogEntry<T> {
@@ -53,20 +58,25 @@ function withStableIds<T>(entries: readonly HardwareCatalogEntry<T>[]): Hardware
 }
 
 export const CPU_CATALOG: HardwareCatalogEntry<CpuCapabilities>[] = withStableIds([
+  ...intelLegacyCpuData,
   ...intelMobileCpuData,
   ...intelDesktopCpuData,
   ...intelCoreUltraCpuData,
   ...amdMobileCpuData,
   ...amdDesktopCpuData,
   ...appleSiliconCpuData,
+  ...workstationCpuData,
 ] as HardwareCatalogEntry<CpuCapabilities>[]);
 
 export const GPU_CATALOG: HardwareCatalogEntry<GpuCapabilities>[] = withStableIds([
   ...integratedGpuData,
+  ...nvidiaMainstreamLaptopGpuData,
   ...nvidiaDesktopGpuData,
   ...nvidiaLaptopGpuData,
   ...amdRadeonGpuData,
+  ...amdRadeonLaptopGpuData,
   ...intelArcGpuData,
+  ...workstationGpuData,
 ] as HardwareCatalogEntry<GpuCapabilities>[]);
 
 function adjustGpuByTgp(
