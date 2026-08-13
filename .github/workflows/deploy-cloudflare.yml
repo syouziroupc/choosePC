@@ -1,0 +1,45 @@
+name: Deploy choosePC to Cloudflare
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout deployable application
+        uses: actions/checkout@v6
+        with:
+          ref: cloudflare-production
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate and build
+        run: |
+          npm run validate:knowledge
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Verify generated deployment files
+        run: |
+          test -f dist/client/index.html
+          test -f dist/choosepc/wrangler.json
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
