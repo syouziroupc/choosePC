@@ -2,6 +2,7 @@ export * from "./types";
 export * from "./scoring";
 export * from "./presets";
 export * from "./catalog";
+export * from "./knowledge";
 export { ENGINE_VERSION, aggregateScore, decide, buildEvaluationResult } from "./evaluation";
 export { evaluatePc } from "./current-evaluation";
 export * from "./market";
