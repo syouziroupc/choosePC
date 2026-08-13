@@ -1,4 +1,4 @@
-import type { EvaluationResult, NormalizedPC, UseCaseProfile } from "../../../packages/core/src/index";
+import { ENGINE_VERSION, type EvaluationResult, type NormalizedPC, type UseCaseProfile } from "../../../packages/core/src/index";
 
 export interface PersistenceEnv {
   DB?: D1Database;
@@ -105,7 +105,7 @@ export async function persistRecommendation(args: {
       args.sessionId,
       safeJson(args.profile),
       safeJson(args.ranked),
-      args.engineVersion,
+      ENGINE_VERSION,
       args.knowledgeVersion,
     ).run();
   } catch (error) {
