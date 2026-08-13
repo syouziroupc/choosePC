@@ -19,4 +19,8 @@ npm run build
 test -f dist/client/index.html
 test -f dist/choosepc/wrangler.json
 
-npx wrangler deploy
+if [ "${WRANGLER_DRY_RUN:-0}" = "1" ]; then
+  npx wrangler deploy --dry-run
+else
+  npx wrangler deploy
+fi
