@@ -53,6 +53,14 @@ Accepted source classes are server-controlled: `retailer_listing`, `marketplace_
 
 Observed CPU/GPU IDs are retained as evidence metadata until the D1 hardware knowledge tables are seeded; the observation does not create invalid foreign-key references.
 
+## POST /api/internal/offers/upsert
+
+Authenticated ingestion boundary for neutral merchant offer facts. Requires `Authorization: Bearer <OFFER_INGEST_TOKEN>`; requests without the configured token are concealed as 404. A request can contain one `offer` or an `offers` array of up to 25 records.
+
+Each offer contains merchant, title, canonical price, HTTPS product URL, controlled stock state, normalized PC data, observation time, and optional expiry time. The server derives the product signature and a stable offer ID from normalized merchant identity plus product URL. Repeated collection of the same merchant URL updates the existing row rather than creating an unbounded duplicate series.
+
+Commercial fields are rejected at this boundary. `affiliateUrl`, commission values, program identifiers and destination overrides cannot be supplied here. `merchant_offers.affiliate_url` is explicitly written as `NULL` on insert/update. Commercial programs and attribution destinations remain a separate post-ranking concern.
+
 ## POST /api/v1/evaluate
 
 Request:
@@ -118,4 +126,4 @@ A first-party opaque session cookie is used for rate limiting and aggregate funn
 
 ## Input and trust policy
 
-Body size and numeric fields are bounded. Arbitrary client-defined scoring profiles are rejected. Shared observed-market data can enter through the authenticated internal ingestion boundary only. Public market calculations and user-entered comparison values are never promoted to trusted evidence.
+Body size and numeric fields are bounded. Arbitrary client-defined scoring profiles are rejected. Shared observed-market data can enter through the authenticated market ingestion boundary only. Neutral offer data can enter through the separately authenticated offer ingestion boundary only. Commercial metadata remains segregated from both ranking inputs and offer ingestion. Public market calculations and user-entered comparison values are never promoted to trusted evidence.
