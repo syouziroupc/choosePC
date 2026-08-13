@@ -4,6 +4,7 @@ export * from "./presets";
 export * from "./catalog";
 export * from "./evaluation";
 export * from "./market";
+export * from "./signature";
 export * from "./monetization";
 export * from "./revenue";
 export * from "./url";
