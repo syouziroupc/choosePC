@@ -3,8 +3,6 @@ import type { PersistenceEnv } from "./persistence";
 
 type OfferRow = {
   id: string;
-  merchant: string;
-  title: string;
   price_jpy: number;
   normalized_pc_json: string;
   observed_at: string;
@@ -74,8 +72,8 @@ function matchesFilters(pc: NormalizedPC, filters: OfferSearchFilters): boolean 
 }
 
 /**
- * Loads only neutral offer/evaluation fields. Affiliate URLs, commercial program data and
- * commission values are intentionally absent from this query and therefore cannot affect rank.
+ * Loads only fields required to construct an evaluation candidate. Merchant identity, affiliate
+ * URLs, commercial programs and commission values are absent before rank is frozen.
  */
 export async function loadNeutralOfferCandidates(env: PersistenceEnv, filters: OfferSearchFilters = {}): Promise<NeutralOfferSearchResult> {
   const db = env.DB;
@@ -89,7 +87,7 @@ export async function loadNeutralOfferCandidates(env: PersistenceEnv, filters: O
 
   try {
     const rows = await db.prepare(`
-      SELECT id, merchant, title, price_jpy, normalized_pc_json, observed_at
+      SELECT id, price_jpy, normalized_pc_json, observed_at
       FROM merchant_offers
       WHERE price_jpy <= ?
         AND observed_at >= ?
