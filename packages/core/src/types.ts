@@ -12,24 +12,9 @@ export type DeviceCategory =
 
 export type ConditionType = "new" | "used" | "refurbished" | "unknown";
 export type GpuVariant = "desktop" | "laptop" | "integrated" | "unknown";
-export type Decision =
-  | "strong_buy"
-  | "buy"
-  | "fair"
-  | "overpriced"
-  | "avoid"
-  | "insufficient_data";
+export type Decision = "strong_buy" | "buy" | "fair" | "overpriced" | "avoid" | "insufficient_data";
 
-export type UseCaseId =
-  | "office"
-  | "student"
-  | "programming"
-  | "gaming"
-  | "video_editing"
-  | "creative"
-  | "cad_3d"
-  | "local_ai"
-  | "business_mobile";
+export type UseCaseId = "office" | "student" | "programming" | "gaming" | "video_editing" | "creative" | "cad_3d" | "local_ai" | "business_mobile";
 
 export type RequirementMetric =
   | "cpuGeneral"
@@ -65,7 +50,14 @@ export interface NormalizedPC {
 
 export interface CpuCapabilities { general: number; single: number; multi: number; gaming: number; efficiency?: number }
 export interface GpuCapabilities { gaming1080: number; gaming1440: number; gaming4k: number; compute: number; rayTracing?: number }
-export interface ResolvedHardware { cpu?: CpuCapabilities | null; gpu?: GpuCapabilities | null; cpuConfidence: number; gpuConfidence: number }
+export interface ResolvedHardware {
+  cpuId?: string | null;
+  gpuId?: string | null;
+  cpu?: CpuCapabilities | null;
+  gpu?: GpuCapabilities | null;
+  cpuConfidence: number;
+  gpuConfidence: number;
+}
 
 export interface RequirementBand {
   metric: RequirementMetric;
