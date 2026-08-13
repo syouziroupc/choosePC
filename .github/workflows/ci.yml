@@ -18,6 +18,8 @@ jobs:
       - run: npm ci
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+      - name: Audit all dependencies
+        run: npm audit --audit-level=high
       - run: npm run validate:knowledge
       - name: Validate D1 migrations
         run: python3 scripts/validate_migrations.py
