@@ -140,12 +140,22 @@ function priceFromOffer(value: unknown): number | null {
 }
 
 function detectCatalogLabel(text: string, type: "cpu" | "gpu"): string | null {
-  const normalized = text.toLowerCase().replace(/[®™]/g, "");
+  const normalized = normalizeComparableText(text);
+  if (!normalized) return null;
+  const padded = ` ${normalized} `;
   const entries = type === "cpu" ? CPU_CATALOG : GPU_CATALOG;
-  const matches = entries.filter((entry) => entry.aliases.some((alias) => normalized.includes(alias.toLowerCase())));
-  if (!matches.length) return null;
-  matches.sort((a, b) => Math.max(...b.aliases.map((item) => item.length)) - Math.max(...a.aliases.map((item) => item.length)));
-  return matches[0].label;
+  let best: { label: string; matchedLength: number } | null = null;
+
+  for (const entry of entries) {
+    for (const alias of entry.aliases) {
+      const normalizedAlias = normalizeComparableText(alias);
+      if (!normalizedAlias || !padded.includes(` ${normalizedAlias} `)) continue;
+      if (!best || normalizedAlias.length > best.matchedLength) {
+        best = { label: entry.label, matchedLength: normalizedAlias.length };
+      }
+    }
+  }
+  return best?.label ?? null;
 }
 
 function productRelevance(product: JsonLdObject, sourceUrl: string, pageTitle: string | null): number {
