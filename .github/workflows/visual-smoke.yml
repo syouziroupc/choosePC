@@ -30,7 +30,7 @@ jobs:
           done
           cat /tmp/choosepc-vite.log
           exit 1
-      - name: Capture desktop and mobile renders
+      - name: Capture initial desktop and mobile renders
         run: |
           mkdir -p visual-artifacts
           CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
@@ -40,12 +40,23 @@ jobs:
           fi
           "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1440,1600 --screenshot="$PWD/visual-artifacts/home-desktop.png" http://127.0.0.1:5173/
           "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=390,1200 --screenshot="$PWD/visual-artifacts/home-mobile.png" http://127.0.0.1:5173/
-          "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1440,4200 --screenshot="$PWD/visual-artifacts/full-desktop.png" http://127.0.0.1:5173/
-          "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=390,4600 --screenshot="$PWD/visual-artifacts/full-mobile.png" http://127.0.0.1:5173/
           test -s visual-artifacts/home-desktop.png
           test -s visual-artifacts/home-mobile.png
-          test -s visual-artifacts/full-desktop.png
-          test -s visual-artifacts/full-mobile.png
+      - name: Exercise purchase result and offer recommendation states
+        env:
+          VISUAL_BASE_URL: http://127.0.0.1:5173/
+          VISUAL_OUTPUT_DIR: visual-artifacts
+        run: |
+          export CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$CHROME" ]; then
+            echo "No Chrome/Chromium executable on runner"
+            exit 1
+          fi
+          node scripts/capture_visual_states.mjs
+          test -s visual-artifacts/purchase-empty-desktop.png
+          test -s visual-artifacts/purchase-empty-mobile.png
+          test -s visual-artifacts/purchase-offers-desktop.png
+          test -s visual-artifacts/purchase-offers-mobile.png
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
         with:
