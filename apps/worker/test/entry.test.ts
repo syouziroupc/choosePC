@@ -104,6 +104,24 @@ describe("Worker internal administration entry", () => {
     expect(await response.json()).toEqual({ error: "INVALID_OFFERS" });
   });
 
+  it("rejects offer expiry beyond the shared 30-day freshness window", async () => {
+    const { DB } = fakeDb();
+    const observedAt = new Date();
+    const response = await entry.fetch(
+      internalRequest("/api/internal/offers/upsert", {
+        offer: {
+          ...validOffer,
+          observedAt: observedAt.toISOString(),
+          expiresAt: new Date(observedAt.getTime() + 31 * 86_400_000).toISOString(),
+        },
+      }, "offer-secret"),
+      { URL_INSPECT_LIMITER: limiter(), OFFER_INGEST_TOKEN: "offer-secret", DB } as never,
+      {} as ExecutionContext,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "INVALID_OFFERS" });
+  });
+
   it("upserts a validated neutral offer with an authenticated token", async () => {
     const { DB, writes } = fakeDb();
     const response = await entry.fetch(
@@ -112,10 +130,11 @@ describe("Worker internal administration entry", () => {
       {} as ExecutionContext,
     );
     expect(response.status).toBe(200);
-    const data = await response.json() as { createdCount: number; updatedCount: number; stored: Array<{ id: string }> };
+    const data = await response.json() as { createdCount: number; updatedCount: number; stored: Array<{ id: string; expiresAt: string }> };
     expect(data.createdCount).toBe(1);
     expect(data.updatedCount).toBe(0);
     expect(data.stored[0].id).toMatch(/^offer-[a-f0-9]{40}$/);
+    expect(new Date(data.stored[0].expiresAt).getTime()).toBe(new Date(validOffer.observedAt).getTime() + 30 * 86_400_000);
     const insert = writes.find((item) => /INSERT INTO merchant_offers/i.test(item.sql));
     expect(insert).toBeTruthy();
     expect(insert!.sql).toMatch(/affiliate_url = NULL/i);
@@ -135,6 +154,20 @@ describe("Worker internal administration entry", () => {
     const response = await entry.fetch(
       internalRequest("/api/internal/commercial/upsert", {
         program: { ...validProgram, disclosureText: "" },
+        links: [],
+      }, "commercial-secret"),
+      { URL_INSPECT_LIMITER: limiter(), COMMERCIAL_ADMIN_TOKEN: "commercial-secret", DB } as never,
+      {} as ExecutionContext,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "INVALID_COMMERCIAL_CONFIGURATION" });
+  });
+
+  it("rejects unsafe commercial click-reference parameter names", async () => {
+    const { DB } = fakeDb("Example Shop");
+    const response = await entry.fetch(
+      internalRequest("/api/internal/commercial/upsert", {
+        program: { ...validProgram, clickRefParam: "bad parameter" },
         links: [],
       }, "commercial-secret"),
       { URL_INSPECT_LIMITER: limiter(), COMMERCIAL_ADMIN_TOKEN: "commercial-secret", DB } as never,

@@ -1,4 +1,5 @@
 import type { NormalizedPC, RecommendationCandidate } from "../../../packages/core/src/index";
+import { OFFER_MAX_AGE_DAYS } from "./offer-store";
 import type { PersistenceEnv } from "./persistence";
 
 type OfferRow = {
@@ -24,7 +25,6 @@ export interface NeutralOfferSearchResult {
 const MAX_SCAN_ROWS = 120;
 const DEFAULT_CANDIDATES = 20;
 const MAX_CANDIDATES = 40;
-const OFFER_MAX_AGE_DAYS = 30;
 const DEVICE_CATEGORIES = new Set([
   "general_laptop",
   "mobile_laptop",
@@ -91,7 +91,7 @@ export async function loadNeutralOfferCandidates(env: PersistenceEnv, filters: O
       FROM merchant_offers
       WHERE price_jpy <= ?
         AND observed_at >= ?
-        AND (expires_at IS NULL OR expires_at >= CURRENT_TIMESTAMP)
+        AND (expires_at IS NULL OR datetime(expires_at) >= CURRENT_TIMESTAMP)
         AND (stock_state IS NULL OR lower(stock_state) NOT IN ('out_of_stock', 'sold', 'unavailable'))
       ORDER BY observed_at DESC
       LIMIT ?

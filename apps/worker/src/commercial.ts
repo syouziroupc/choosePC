@@ -4,6 +4,7 @@ import {
   type MerchantType,
   type RankedOffer,
 } from "../../../packages/core/src/index";
+import { OFFER_MAX_AGE_DAYS } from "./offer-store";
 import type { PersistenceEnv } from "./persistence";
 
 type CommercialRow = {
@@ -131,6 +132,7 @@ async function loadRows(env: PersistenceEnv, offerIds: readonly string[]): Promi
   const db = env.DB;
   if (!db || offerIds.length === 0) return [];
   const placeholders = offerIds.map(() => "?").join(",");
+  const cutoff = new Date(Date.now() - OFFER_MAX_AGE_DAYS * 86_400_000).toISOString();
   const result = await db.prepare(`
     SELECT
       mo.id AS offer_id,
@@ -151,8 +153,10 @@ async function loadRows(env: PersistenceEnv, offerIds: readonly string[]): Promi
       ON cp.id = al.program_id
       AND lower(trim(cp.merchant)) = lower(trim(mo.merchant))
     WHERE mo.id IN (${placeholders})
-      AND (mo.expires_at IS NULL OR mo.expires_at >= CURRENT_TIMESTAMP)
-  `).bind(...offerIds).all<CommercialRow>();
+      AND mo.observed_at >= ?
+      AND (mo.expires_at IS NULL OR datetime(mo.expires_at) >= CURRENT_TIMESTAMP)
+      AND (mo.stock_state IS NULL OR lower(mo.stock_state) NOT IN ('out_of_stock', 'sold', 'unavailable'))
+  `).bind(...offerIds, cutoff).all<CommercialRow>();
   return result.results ?? [];
 }
 

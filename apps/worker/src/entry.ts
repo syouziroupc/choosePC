@@ -6,6 +6,7 @@ import {
   type CommercialProgramStatus,
 } from "./commercial-admin";
 import {
+  OFFER_MAX_AGE_MS,
   upsertTrustedMerchantOffer,
   type OfferStockState,
   type TrustedMerchantOffer,
@@ -143,7 +144,7 @@ function validOffer(value: unknown): value is TrustedMerchantOffer {
   if (offer.expiresAt != null) {
     if (typeof offer.expiresAt !== "string") return false;
     const expiresAt = new Date(offer.expiresAt).getTime();
-    if (!Number.isFinite(expiresAt) || expiresAt < observedAt || expiresAt > observedAt + 366 * 86_400_000) return false;
+    if (!Number.isFinite(expiresAt) || expiresAt < observedAt || expiresAt > observedAt + OFFER_MAX_AGE_MS) return false;
   }
   return true;
 }
@@ -182,6 +183,7 @@ function validProgram(value: unknown): value is CommercialProgramInput {
     const verifiedAt = new Date(program.lastVerifiedAt).getTime();
     if (!Number.isFinite(verifiedAt) || verifiedAt > Date.now() + 86_400_000) return false;
   }
+  if (program.clickRefParam != null && (typeof program.clickRefParam !== "string" || !/^[A-Za-z0-9_.-]{1,64}$/.test(program.clickRefParam.trim()))) return false;
   return true;
 }
 
@@ -242,7 +244,14 @@ export default {
       if (message === "REQUEST_TOO_LARGE") return json({ error: message }, 400);
       if (message === "COMMERCIAL_OFFER_NOT_FOUND") return json({ error: message }, 404);
       if (message === "COMMERCIAL_MERCHANT_MISMATCH") return json({ error: message }, 409);
-      if (message === "INVALID_COMMERCIAL_URL" || message === "COMMISSION_METADATA_TOO_LARGE") return json({ error: message }, 400);
+      if ([
+        "INVALID_COMMERCIAL_URL",
+        "INVALID_CLICK_REF_PARAM",
+        "COMMISSION_METADATA_TOO_LARGE",
+        "INVALID_OFFER_URL",
+        "INVALID_OFFER_OBSERVED_AT",
+        "INVALID_OFFER_EXPIRY",
+      ].includes(message)) return json({ error: message }, 400);
       console.error(JSON.stringify({
         event: "internal_admin_error",
         path: url.pathname,

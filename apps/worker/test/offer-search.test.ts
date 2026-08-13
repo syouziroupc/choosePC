@@ -13,7 +13,7 @@ const storedPc = {
 };
 
 describe("neutral merchant offer search", () => {
-  it("queries only evaluation fields before ranking and trusts canonical row price", async () => {
+  it("queries only evaluation fields before ranking, enforces freshness and trusts canonical row price", async () => {
     let sql = "";
     const db = {
       prepare(query: string) {
@@ -49,6 +49,9 @@ describe("neutral merchant offer search", () => {
     expect(sql).not.toMatch(/affiliate_url/i);
     expect(sql).not.toMatch(/commercial_program/i);
     expect(sql).not.toMatch(/commission/i);
+    expect(sql).toMatch(/observed_at\s*>=\s*\?/i);
+    expect(sql).toMatch(/datetime\(expires_at\)\s*>=\s*CURRENT_TIMESTAMP/i);
+    expect(sql).toMatch(/out_of_stock.*sold.*unavailable/is);
   });
 
   it("skips corrupt normalized PC rows instead of crashing recommendation", async () => {

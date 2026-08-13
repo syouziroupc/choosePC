@@ -48,7 +48,7 @@ try:
     if "evaluation_runs" not in tables or "market_observations" not in tables or "knowledge_evidence" not in tables:
         raise SystemExit("Required core tables are missing after migrations")
 
-    # Exercise the commercial-integrity constraints against real SQLite rather than only parsing DDL.
+    # Exercise the commercial-integrity and offer-freshness constraints against real SQLite rather than only parsing DDL.
     connection.execute(
         "INSERT INTO merchant_offers (id, merchant, title, price_jpy, product_url, normalized_pc_json, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         ("offer-a", "Merchant A", "A", 10000, "https://example.com/a", "{}", "2026-08-13T00:00:00Z"),
@@ -57,6 +57,29 @@ try:
         "INSERT INTO merchant_offers (id, merchant, title, price_jpy, product_url, normalized_pc_json, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         ("offer-b", "Merchant B", "B", 12000, "https://example.com/b", "{}", "2026-08-13T00:00:00Z"),
     )
+    capped = connection.execute(
+        "SELECT datetime(expires_at), datetime(observed_at, '+30 days') FROM merchant_offers WHERE id = ?",
+        ("offer-a",),
+    ).fetchone()
+    if not capped or capped[0] != capped[1]:
+        raise SystemExit(f"Missing default 30-day offer expiry: {capped}")
+
+    connection.execute(
+        "INSERT INTO merchant_offers (id, merchant, title, price_jpy, product_url, normalized_pc_json, observed_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("offer-long", "Merchant A", "Long", 10000, "https://example.com/long", "{}", "2026-08-13T00:00:00Z", "2026-11-13T00:00:00Z"),
+    )
+    long_expiry = connection.execute(
+        "SELECT datetime(expires_at), datetime(observed_at, '+30 days') FROM merchant_offers WHERE id = ?",
+        ("offer-long",),
+    ).fetchone()
+    if not long_expiry or long_expiry[0] != long_expiry[1]:
+        raise SystemExit(f"Offer expiry cap failed: {long_expiry}")
+
+    expect_integrity_error(
+        "INSERT INTO merchant_offers (id, merchant, title, price_jpy, product_url, normalized_pc_json, observed_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("offer-early", "Merchant A", "Early", 10000, "https://example.com/early", "{}", "2026-08-13T00:00:00Z", "2026-08-12T00:00:00Z"),
+    )
+
     connection.execute(
         "INSERT INTO commercial_programs (id, merchant, program_type, status) VALUES (?, ?, ?, ?)",
         ("program-a", "Merchant A", "affiliate", "active"),
@@ -92,7 +115,7 @@ try:
 
     print(
         f"Migration validation passed: {len(files)} migration(s), {len(tables)} table(s), "
-        f"{len(indexes)} explicit index(es); commercial integrity triggers verified."
+        f"{len(indexes)} explicit index(es); commercial integrity and offer freshness triggers verified."
     )
 finally:
     connection.close()

@@ -44,13 +44,16 @@ const base = {
 };
 
 describe("commercial resolution", () => {
-  it("joins programs only when merchant identity matches the offer merchant", async () => {
+  it("joins programs only when merchant identity matches the offer merchant and enforces offer eligibility", async () => {
     const db = fakeDb([{ ...base, program_id: null, attribution_id: null, program_type: null, program_status: null, destination_url: null, disclosure_text: null }]);
     await resolveCommercialPresentations({
       env: { DB: db.DB as never },
       ranked: [{ offerId: "offer-1", rank: 1, evaluationScore: 88 }],
     });
     expect(db.sql).toMatch(/lower\(trim\(cp\.merchant\)\)\s*=\s*lower\(trim\(mo\.merchant\)\)/i);
+    expect(db.sql).toMatch(/mo\.observed_at\s*>=\s*\?/i);
+    expect(db.sql).toMatch(/datetime\(mo\.expires_at\)\s*>=\s*CURRENT_TIMESTAMP/i);
+    expect(db.sql).toMatch(/out_of_stock.*sold.*unavailable/is);
   });
 
   it("selects active commercial destinations deterministically after rank is frozen", async () => {

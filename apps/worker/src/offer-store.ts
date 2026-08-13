@@ -5,6 +5,9 @@ import {
 } from "../../../packages/core/src/index";
 import type { PersistenceEnv } from "./persistence";
 
+export const OFFER_MAX_AGE_DAYS = 30;
+export const OFFER_MAX_AGE_MS = OFFER_MAX_AGE_DAYS * 86_400_000;
+
 export type OfferStockState = "in_stock" | "low_stock" | "out_of_stock" | "sold" | "unavailable" | "unknown";
 
 export interface TrustedMerchantOffer {
@@ -22,6 +25,7 @@ export interface StoredMerchantOffer {
   id: string;
   productSignature: string;
   created: boolean;
+  expiresAt: string;
 }
 
 function normalizeHttpsUrl(raw: string): string {
@@ -54,9 +58,21 @@ function canonicalPc(pc: NormalizedPC, priceJpy: number): NormalizedPC {
   };
 }
 
+function effectiveExpiry(observedAt: string, requestedExpiresAt?: string | null): string {
+  const observedMs = new Date(observedAt).getTime();
+  if (!Number.isFinite(observedMs)) throw new Error("INVALID_OFFER_OBSERVED_AT");
+  const maximumMs = observedMs + OFFER_MAX_AGE_MS;
+  if (requestedExpiresAt == null) return new Date(maximumMs).toISOString();
+
+  const requestedMs = new Date(requestedExpiresAt).getTime();
+  if (!Number.isFinite(requestedMs) || requestedMs < observedMs) throw new Error("INVALID_OFFER_EXPIRY");
+  return new Date(Math.min(requestedMs, maximumMs)).toISOString();
+}
+
 /**
  * Stores neutral offer facts only. Affiliate URLs and commission/program metadata are deliberately
- * not accepted here; those belong to the separate post-ranking commercial tables.
+ * not accepted here; those belong to the separate post-ranking commercial tables. Every stored
+ * offer receives an effective expiry no later than 30 days after its observation timestamp.
  */
 export async function upsertTrustedMerchantOffer(args: {
   env: PersistenceEnv;
@@ -69,6 +85,7 @@ export async function upsertTrustedMerchantOffer(args: {
   const id = `offer-${(await sha256Hex(`${args.offer.merchant.trim().toLowerCase()}\n${productUrl}`)).slice(0, 40)}`;
   const signature = productSignature(args.offer.pc);
   const pc = canonicalPc(args.offer.pc, Math.round(args.offer.priceJpy));
+  const expiresAt = effectiveExpiry(args.offer.observedAt, args.offer.expiresAt);
   const existing = await db.prepare("SELECT id FROM merchant_offers WHERE id = ? LIMIT 1")
     .bind(id)
     .first<{ id: string }>();
@@ -99,8 +116,8 @@ export async function upsertTrustedMerchantOffer(args: {
     signature,
     JSON.stringify(pc),
     args.offer.observedAt,
-    args.offer.expiresAt ?? null,
+    expiresAt,
   ).run();
 
-  return { id, productSignature: signature, created: !existing };
+  return { id, productSignature: signature, created: !existing, expiresAt };
 }
