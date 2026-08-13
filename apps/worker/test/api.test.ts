@@ -37,6 +37,8 @@ const basePc = {
   extra: { upgradeabilityScore: 50 },
 };
 
+const userEstimate = { fairPriceJpy: 50000, source: "user_estimate", sampleCount: 1, confidence: 40, ageDays: 0 };
+
 describe("Worker API boundary", () => {
   it("reports health", async () => {
     const response = await worker.fetch(new Request("https://choosepc.test/api/v1/health"), env() as never);
@@ -50,7 +52,7 @@ describe("Worker API boundary", () => {
     const good = await requestJson("/api/v1/evaluate", {
       pc: basePc,
       useCase: "office",
-      market: { fairPriceJpy: 50000, source: "observed_market", sampleCount: 12, confidence: 80, ageDays: 4 },
+      market: userEstimate,
     });
     expect(good.response.status).toBe(200);
     expect(good.data).toHaveProperty("result");
@@ -58,6 +60,16 @@ describe("Worker API boundary", () => {
     const bad = await requestJson("/api/v1/evaluate", { pc: basePc, useCase: "client-defined-super-score" });
     expect(bad.response.status).toBe(400);
     expect(bad.data.error).toBe("INVALID_USE_CASE");
+  });
+
+  it("rejects clients that spoof observed-market provenance", async () => {
+    const { response, data } = await requestJson("/api/v1/evaluate", {
+      pc: basePc,
+      useCase: "office",
+      market: { fairPriceJpy: 50000, source: "observed_market", sampleCount: 20, confidence: 95, ageDays: 0 },
+    });
+    expect(response.status).toBe(400);
+    expect(data.error).toBe("INVALID_MARKET");
   });
 
   it("rejects invalid numeric payloads before evaluation", async () => {
@@ -74,7 +86,7 @@ describe("Worker API boundary", () => {
     expect(response.headers.get("retry-after")).toBe("60");
   });
 
-  it("computes robust market estimates without persisting client observations", async () => {
+  it("computes robust market estimates without promoting client observations", async () => {
     const now = Date.now();
     const obs = (priceJpy: number, ageDays: number, similarity = 0.95, sourceConfidence = 0.9) => ({
       priceJpy,
@@ -97,6 +109,7 @@ describe("Worker API boundary", () => {
     expect(market.estimate).not.toBeNull();
     expect(market.estimate!.fairPriceJpy).toBeLessThan(50000);
     expect(market.rejectedSamples).toBeGreaterThanOrEqual(1);
+    expect(data.reusableAsObservedEvidence).toBe(false);
   });
 
   it("rejects malformed market observations", async () => {
@@ -105,6 +118,24 @@ describe("Worker API boundary", () => {
     });
     expect(response.status).toBe(400);
     expect(data.error).toBe("INVALID_MARKET_OBSERVATIONS");
+  });
+
+  it("returns no stored market evidence when D1 is not bound", async () => {
+    const { response, data } = await requestJson("/api/v1/market/lookup", { pc: basePc });
+    expect(response.status).toBe(200);
+    expect(data.market).toBeNull();
+  });
+
+  it("conceals the trusted market-ingest endpoint without its secret", async () => {
+    const response = await worker.fetch(
+      new Request("https://choosepc.test/api/internal/market/observe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ observation: { pc: basePc, priceJpy: 45000, observedAt: new Date().toISOString(), source: "retailer_listing" } }),
+      }),
+      env() as never,
+    );
+    expect(response.status).toBe(404);
   });
 
   it("limits recommendation batch size and duplicate identifiers", async () => {
@@ -122,11 +153,12 @@ describe("Worker API boundary", () => {
   it("returns a neutral ranked recommendation without commercial fields", async () => {
     const stronger = { ...basePc, commerce: { priceJpy: 42000, warrantyDays: 90 } };
     const weaker = { ...basePc, memory: { sizeGb: 8, upgradeable: false }, commerce: { priceJpy: 59000, warrantyDays: 30 } };
+    const market = { fairPriceJpy: 48000, source: "user_estimate", sampleCount: 1, confidence: 40, ageDays: 0 };
     const { response, data } = await requestJson("/api/v1/recommend", {
       useCase: "office",
       candidates: [
-        { candidateId: "weaker", pc: weaker, market: { fairPriceJpy: 48000, source: "observed_market", sampleCount: 12, confidence: 80, ageDays: 4 } },
-        { candidateId: "stronger", pc: stronger, market: { fairPriceJpy: 48000, source: "observed_market", sampleCount: 12, confidence: 80, ageDays: 4 } },
+        { candidateId: "weaker", pc: weaker, market },
+        { candidateId: "stronger", pc: stronger, market },
       ],
     });
     expect(response.status).toBe(200);
