@@ -3,6 +3,7 @@ export * from "./scoring";
 export * from "./presets";
 export * from "./catalog";
 export * from "./evaluation";
+export * from "./market";
 export * from "./monetization";
 export * from "./revenue";
 export * from "./url";
