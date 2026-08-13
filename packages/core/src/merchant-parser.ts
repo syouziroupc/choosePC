@@ -65,6 +65,14 @@ const PROFILES: MerchantProfile[] = [
     scopeClasses: ["ItemDescription", "item-description", "spec"],
   },
   {
+    merchant: "メルカリ",
+    parserName: "mercari-jp",
+    hosts: ["mercari.com"],
+    titleClasses: ["item-name", "product-name"],
+    priceClasses: ["item-price", "price"],
+    scopeClasses: ["item-description", "product-description", "item-details"],
+  },
+  {
     merchant: "Lenovo",
     parserName: "lenovo-jp",
     hosts: ["lenovo.com"],
@@ -234,7 +242,7 @@ function structuredMetaPrice(html: string): number | null {
 
 function inferStockState(text: string): { state: ParsedStockState; confidence: number } {
   const normalized = text.toLowerCase();
-  if (/売り切れ|売切れ|sold\s*out/.test(normalized)) return { state: "sold", confidence: 92 };
+  if (/売り切れ|売切れ|sold\s*out|売却済み/.test(normalized)) return { state: "sold", confidence: 92 };
   if (/販売終了|取扱終了|お取り扱いできません|unavailable|discontinued/.test(normalized)) return { state: "unavailable", confidence: 90 };
   if (/在庫切れ|在庫なし|在庫がありません|out\s*of\s*stock/.test(normalized)) return { state: "out_of_stock", confidence: 90 };
   if (/残り\s*[1-5]\s*(?:点|台)|low\s*stock|残りわずか/.test(normalized)) return { state: "low_stock", confidence: 82 };
