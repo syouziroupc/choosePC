@@ -25,8 +25,9 @@ jobs:
         run: |
           echo "wrangler=$(npm view wrangler version)"
           echo "vite-plugin=$(npm view @cloudflare/vite-plugin version)"
+          echo "workers-types=$(npm view @cloudflare/workers-types version)"
       - name: Update vulnerable Cloudflare development toolchain
-        run: npm install --save-dev --save-exact wrangler@latest @cloudflare/vite-plugin@latest
+        run: npm install --save-dev --save-exact wrangler@latest @cloudflare/vite-plugin@latest @cloudflare/workers-types@latest
       - name: Verify dependency security
         run: |
           npm audit --omit=dev --audit-level=high
