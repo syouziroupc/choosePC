@@ -35,6 +35,7 @@ export function evaluateAndRankCandidates(args: {
     const hardware = resolveHardware(candidate.pc.cpu?.raw, candidate.pc.gpu?.raw, candidate.pc.gpu?.tgpW, {
       cpuConfidence: candidate.pc.cpu?.confidence,
       gpuConfidence: candidate.pc.gpu?.confidence,
+      gpuVariant: candidate.pc.gpu?.variant,
     });
     return {
       candidateId: candidate.candidateId,
