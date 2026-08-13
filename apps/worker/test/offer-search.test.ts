@@ -13,7 +13,7 @@ const storedPc = {
 };
 
 describe("neutral merchant offer search", () => {
-  it("does not query commercial fields before ranking and trusts canonical row price", async () => {
+  it("queries only evaluation fields before ranking and trusts canonical row price", async () => {
     let sql = "";
     const db = {
       prepare(query: string) {
@@ -25,8 +25,6 @@ describe("neutral merchant offer search", () => {
                 return {
                   results: [{
                     id: "offer-1",
-                    merchant: "Example Shop",
-                    title: "Example PC",
                     price_jpy: 42000,
                     normalized_pc_json: JSON.stringify(storedPc),
                     observed_at: new Date().toISOString(),
@@ -44,6 +42,10 @@ describe("neutral merchant offer search", () => {
     expect(result.candidates[0].candidateId).toBe("offer-1");
     expect(result.candidates[0].pc.commerce.priceJpy).toBe(42000);
     expect(result.candidates[0].market).toBeNull();
+
+    const selectedFields = sql.split(/\bFROM\b/i)[0];
+    expect(selectedFields).not.toMatch(/merchant/i);
+    expect(selectedFields).not.toMatch(/title/i);
     expect(sql).not.toMatch(/affiliate_url/i);
     expect(sql).not.toMatch(/commercial_program/i);
     expect(sql).not.toMatch(/commission/i);
@@ -59,8 +61,6 @@ describe("neutral merchant offer search", () => {
                 return {
                   results: [{
                     id: "broken",
-                    merchant: "Example Shop",
-                    title: "Broken",
                     price_jpy: 42000,
                     normalized_pc_json: "{not-json",
                     observed_at: new Date().toISOString(),
