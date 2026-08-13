@@ -130,4 +130,35 @@ describe("evaluation engine v0.2 gates", () => {
     expect(result.scores.confidence).toBeLessThanOrEqual(77);
     expect(result.decision).not.toBe("strong_buy");
   });
+
+  it("requires observed market evidence for strong_buy", () => {
+    const idealPc = basePc({
+      memory: { sizeGb: 32, upgradeable: true },
+      storage: [{ kind: "nvme_ssd", sizeGb: 1024 }],
+      condition: { type: "new", defects: [] },
+      commerce: { priceJpy: 20000, warrantyDays: 365 },
+      extra: { upgradeabilityScore: 100, platformAgeYears: 1, osSupportYears: 5 },
+    });
+    const hardware = {
+      cpu: { general: 100, single: 100, multi: 100, gaming: 100, efficiency: 100 },
+      gpu: null,
+      cpuConfidence: 100,
+      gpuConfidence: 100,
+    };
+    const observed = evaluatePc({
+      pc: idealPc,
+      profile: USE_CASES.office,
+      hardware,
+      market: { fairPriceJpy: 40000, source: "observed_market", sampleCount: 100, confidence: 100, ageDays: 1 },
+    });
+    const userEstimate = evaluatePc({
+      pc: idealPc,
+      profile: USE_CASES.office,
+      hardware,
+      market: { fairPriceJpy: 40000, source: "user_estimate", sampleCount: 100, confidence: 100, ageDays: 1 },
+    });
+    expect(observed.decision).toBe("strong_buy");
+    expect(userEstimate.decision).toBe("buy");
+    expect(userEstimate.warnings.some((warning) => warning.includes("最上位の購入推奨"))).toBe(true);
+  });
 });

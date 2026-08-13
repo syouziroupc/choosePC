@@ -1,4 +1,4 @@
-# Decision Policy v0.2
+# Decision Policy v0.2.1
 
 The public verdict is gated. An average score alone cannot create a recommendation.
 
@@ -10,7 +10,7 @@ The public verdict is gated. An average score alone cannot create a recommendati
 4. Evaluate price only from explicit market evidence; missing evidence is neutral, never invented.
 5. Calculate evidence confidence.
 6. Calculate descriptive score dimensions.
-7. Apply decision gates.
+7. Apply decision gates and market-provenance gate.
 8. Freeze result/ranking.
 9. Attach own-stock / affiliate / normal destinations afterward.
 
@@ -20,7 +20,8 @@ The public verdict is gated. An average score alone cannot create a recommendati
 - Unknown critical requirement or confidence below 58 -> `insufficient_data`.
 - Risk >= 70 or use-fit < 45 -> `avoid`.
 - Adequate PC but value < 38 -> `overpriced`.
-- `strong_buy`: overall >= 87, fit >= 85, value >= 72, risk <= 25, confidence >= 78.
+- `strong_buy`: overall >= 87, fit >= 85, value >= 72, risk <= 25, confidence >= 78 **and purchase market source is `observed_market`**.
+- A result that otherwise meets `strong_buy` but relies on `user_estimate` or unspecified market provenance is capped at `buy`.
 - `buy`: overall >= 74, fit >= 75, value >= 55, risk <= 45, confidence >= 68.
 - `fair`: minimums are met but evidence/value does not justify a stronger verdict.
 
@@ -40,4 +41,4 @@ GPU marketing name is not treated as a complete performance identity. TGP, VRAM,
 
 ## Price and sale
 
-A user-entered comparison price is marked `user_estimate`; it is not promoted to observed market evidence. The sale assistant does not invent a dealer buyback quote. Observed market data must carry sample count, confidence and age.
+A user-entered comparison price is marked `user_estimate`; it is not promoted to observed market evidence and cannot by itself produce `strong_buy`. The sale assistant does not invent a dealer buyback quote. Observed market data must carry sample count, confidence and age.

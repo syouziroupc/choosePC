@@ -1,7 +1,7 @@
 import type { Decision, EvaluationInput, EvaluationResult, HardConstraint, ReasonDetail, ScoreVector } from "./types";
 import { clamp, extractMetric, marketConfidence, scoreMarketValue, scoreRequirement } from "./scoring";
 
-export const ENGINE_VERSION = "0.2.0";
+export const ENGINE_VERSION = "0.2.1";
 
 function weightedAverage(values: Array<{ value: number; weight: number }>, fallback = 50): number {
   const totalWeight = values.reduce((sum, item) => sum + item.weight, 0);
@@ -143,6 +143,13 @@ export function decide(scores: ScoreVector, constraints: HardConstraint[] = []):
   return "avoid";
 }
 
+function applyMarketTrustGate(decision: Decision, input: EvaluationInput, warnings: string[]): Decision {
+  if ((input.context ?? "purchase") !== "purchase" || decision !== "strong_buy") return decision;
+  if (input.market?.source === "observed_market") return decision;
+  warnings.push("観測市場データがないため、利用者入力の比較相場だけでは最上位の購入推奨には昇格しません。");
+  return "buy";
+}
+
 export function evaluatePc(input: EvaluationInput): EvaluationResult {
   const reasons: ReasonDetail[] = [];
   const warnings: string[] = [];
@@ -203,9 +210,10 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
   if (value >= 85) reasons.push({ code: "value:good", kind: "positive", message: "入力された相場に対して価格面は有利です" });
   if (value < 45) reasons.push({ code: "value:poor", kind: "warning", message: "入力された相場に対して価格が高めです" });
 
+  const decision = applyMarketTrustGate(decide(scores, constraints), input, warnings);
   return {
     scores: { ...scores, overall: aggregateScore(scores) },
-    decision: decide(scores, constraints),
+    decision,
     reasons: reasons.map((r) => r.code),
     reasonDetails: reasons,
     warnings,

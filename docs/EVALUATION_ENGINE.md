@@ -1,4 +1,4 @@
-# Evaluation Engine v0.2
+# Evaluation Engine v0.2.1
 
 ## Dimensions
 
@@ -59,12 +59,12 @@ Manufacturer specifications can verify identity, VRAM and power ranges, but they
 
 ## Market scoring
 
-Value uses price / fair-market-price ratio through a piecewise curve. Market confidence combines explicit confidence, sample count and freshness. `user_estimate` market input is capped at low confidence and is never accepted by the sale assistant as observed market evidence.
+Value uses price / fair-market-price ratio through a piecewise curve. Market confidence combines explicit confidence, sample count and freshness. `user_estimate` market input is capped at low market-confidence contribution, is never accepted as observed market evidence, and cannot produce the `strong_buy` verdict. A technically/financially strong result based only on user-entered comparison value is capped at `buy` until observed-market evidence is available.
 
 ## Replacement
 
-Ownership evaluation has a separate confidence context. A current PC can be judged KEEP/UPGRADE/REPAIR/REPLACE without purchase-market evidence; price must not block a technically sound replacement decision.
+Ownership evaluation has a separate confidence context. A current PC can be judged KEEP/UPGRADE/REPAIR/REPLACE without purchase-market evidence; price must not block a technically sound replacement decision. Known critical constraints are handled before normal keep/upgrade routing: insufficient PSU is routed to repair/inspection, memory-only critical failure can route to upgrade when expansion is verified, and other known critical failures cannot be hidden by a generic upgrade suggestion.
 
 ## Regression requirements
 
-CI must keep fixtures for essential requirement failures, capable-but-overpriced products, unknown hardware, PSU critical failure, unknown PSU warning, high/low TGP laptop variants, unknown TGP, unknown cooling, ownership without market evidence, sale without market evidence and ranking/monetization separation.
+CI must keep fixtures for essential requirement failures, capable-but-overpriced products, unknown hardware, PSU critical failure, unknown PSU warning, high/low TGP laptop variants, unknown TGP, unknown cooling, user-estimate strong-buy suppression, ownership without market evidence, known-critical replacement routing, sale without market evidence and ranking/monetization separation.
