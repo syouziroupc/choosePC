@@ -11,6 +11,7 @@ import {
   type OfferStockState,
   type TrustedMerchantOffer,
 } from "./offer-store";
+import { loadOfferIngestionStatus } from "./offer-status";
 import type { MerchantType, NormalizedPC } from "../../../packages/core/src/index";
 import type { PersistenceEnv } from "./persistence";
 
@@ -215,6 +216,13 @@ async function handleOfferIngest(request: Request, env: Env): Promise<Response> 
   });
 }
 
+async function handleOfferStatus(request: Request, env: Env): Promise<Response> {
+  if (!await authorized(request, env.OFFER_INGEST_TOKEN)) return json({ error: "NOT_FOUND" }, 404);
+  const status = await loadOfferIngestionStatus(env);
+  if (!status) return json({ error: "OFFER_DB_UNAVAILABLE" }, 503);
+  return json({ status });
+}
+
 async function handleCommercialAdmin(request: Request, env: Env): Promise<Response> {
   if (!await authorized(request, env.COMMERCIAL_ADMIN_TOKEN)) return json({ error: "NOT_FOUND" }, 404);
   if (!env.DB) return json({ error: "COMMERCIAL_DB_UNAVAILABLE" }, 503);
@@ -232,11 +240,13 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const isOfferIngest = url.pathname === "/api/internal/offers/upsert" && request.method === "POST";
+    const isOfferStatus = url.pathname === "/api/internal/offers/status" && request.method === "GET";
     const isCommercialAdmin = url.pathname === "/api/internal/commercial/upsert" && request.method === "POST";
-    if (!isOfferIngest && !isCommercialAdmin) return baseWorker.fetch(request, env, ctx);
+    if (!isOfferIngest && !isOfferStatus && !isCommercialAdmin) return baseWorker.fetch(request, env, ctx);
 
     try {
       if (isOfferIngest) return await handleOfferIngest(request, env);
+      if (isOfferStatus) return await handleOfferStatus(request, env);
       return await handleCommercialAdmin(request, env);
     } catch (error) {
       if (error instanceof SyntaxError) return json({ error: "INVALID_JSON" }, 400);

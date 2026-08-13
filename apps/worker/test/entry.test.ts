@@ -27,6 +27,12 @@ function internalRequest(path: string, body: unknown, token: string) {
   });
 }
 
+function internalGet(path: string, token: string) {
+  return new Request(`https://choosepc.test${path}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+}
+
 function fakeDb(offerMerchant: string | null = null) {
   const writes: Array<{ sql: string; args: unknown[] }> = [];
   return {
@@ -48,6 +54,38 @@ function fakeDb(offerMerchant: string | null = null) {
           },
         };
       },
+    },
+  };
+}
+
+function offerStatusDb() {
+  return {
+    prepare(sql: string) {
+      return {
+        bind() {
+          if (/GROUP BY merchant/i.test(sql)) {
+            return {
+              async all() {
+                return { results: [{ merchant: "Example Shop", total: 2, eligible: 1, latest_observed_at: "2026-08-13T04:00:00.000Z" }] };
+              },
+            };
+          }
+          return {
+            async first() {
+              return {
+                total: 2,
+                merchant_count: 1,
+                eligible: 1,
+                stale: 1,
+                expired: 1,
+                unavailable: 0,
+                expiring_24h: 0,
+                newest_observed_at: "2026-08-13T04:00:00.000Z",
+              };
+            },
+          };
+        },
+      };
     },
   };
 }
@@ -138,6 +176,27 @@ describe("Worker internal administration entry", () => {
     const insert = writes.find((item) => /INSERT INTO merchant_offers/i.test(item.sql));
     expect(insert).toBeTruthy();
     expect(insert!.sql).toMatch(/affiliate_url = NULL/i);
+  });
+
+  it("protects collector status with the offer-ingestion authority and returns bounded health data", async () => {
+    const concealed = await entry.fetch(
+      internalGet("/api/internal/offers/status", "wrong"),
+      { URL_INSPECT_LIMITER: limiter(), OFFER_INGEST_TOKEN: "offer-secret", DB: offerStatusDb() as never } as never,
+      {} as ExecutionContext,
+    );
+    expect(concealed.status).toBe(404);
+
+    const response = await entry.fetch(
+      internalGet("/api/internal/offers/status", "offer-secret"),
+      { URL_INSPECT_LIMITER: limiter(), OFFER_INGEST_TOKEN: "offer-secret", DB: offerStatusDb() as never } as never,
+      {} as ExecutionContext,
+    );
+    expect(response.status).toBe(200);
+    const data = await response.json() as { status: { maxAgeDays: number; eligible: number; stale: number; merchants: unknown[] } };
+    expect(data.status.maxAgeDays).toBe(30);
+    expect(data.status.eligible).toBe(1);
+    expect(data.status.stale).toBe(1);
+    expect(data.status.merchants).toHaveLength(1);
   });
 
   it("conceals commercial administration behind a separate token", async () => {
