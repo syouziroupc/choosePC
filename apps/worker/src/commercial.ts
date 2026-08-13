@@ -18,6 +18,7 @@ type CommercialRow = {
   program_status: string | null;
   destination_url: string | null;
   disclosure_text: string | null;
+  click_ref_param: string | null;
 };
 
 export interface CommercialPresentation {
@@ -38,6 +39,8 @@ export interface OutboundDestination {
   merchant: string;
   merchantType: MerchantType;
   destinationUrl: string;
+  programId: string | null;
+  clickRefParam: string | null;
 }
 
 function safeHttpsUrl(raw: string): string | null {
@@ -48,6 +51,21 @@ function safeHttpsUrl(raw: string): string | null {
   } catch {
     return null;
   }
+}
+
+function safeClickRefParam(raw: string | null): string | null {
+  if (!raw) return null;
+  const value = raw.trim();
+  return /^[A-Za-z0-9_.-]{1,64}$/.test(value) ? value : null;
+}
+
+export function attachClickReference(destinationUrl: string, clickRefParam: string | null, clickId: string): string {
+  const safeDestination = safeHttpsUrl(destinationUrl);
+  const safeParam = safeClickRefParam(clickRefParam);
+  if (!safeDestination || !safeParam) return destinationUrl;
+  const url = new URL(safeDestination);
+  url.searchParams.set(safeParam, clickId);
+  return url.toString();
 }
 
 function commercialPriority(type: MerchantType | null): number {
@@ -73,6 +91,8 @@ function commercialChoice(rows: readonly CommercialRow[]): {
   title: string;
   priceJpy: number;
   disclosureText: string | null;
+  programId: string | null;
+  clickRefParam: string | null;
 } | null {
   if (!rows.length) return null;
 
@@ -82,9 +102,10 @@ function commercialChoice(rows: readonly CommercialRow[]): {
     .sort(compareCommercialRows);
   const selected = active[0] ?? rows[0];
 
-  const programType = selected.program_status === "active" && selected.program_type ? selected.program_type : "normal";
+  const activeProgram = selected.program_status === "active" && selected.program_type && selected.destination_url;
+  const programType = activeProgram ? selected.program_type! : "normal";
   const destination = safeHttpsUrl(
-    selected.program_status === "active" && selected.destination_url
+    activeProgram && selected.destination_url
       ? selected.destination_url
       : selected.product_url,
   );
@@ -101,6 +122,8 @@ function commercialChoice(rows: readonly CommercialRow[]): {
     title: selected.title,
     priceJpy: selected.price_jpy,
     disclosureText: programType === "normal" ? null : selected.disclosure_text,
+    programId: activeProgram ? selected.program_id : null,
+    clickRefParam: activeProgram ? safeClickRefParam(selected.click_ref_param) : null,
   };
 }
 
@@ -120,7 +143,8 @@ async function loadRows(env: PersistenceEnv, offerIds: readonly string[]): Promi
       cp.program_type,
       cp.status AS program_status,
       al.destination_url,
-      cp.disclosure_text
+      cp.disclosure_text,
+      cp.click_ref_param
     FROM merchant_offers mo
     LEFT JOIN attribution_links al ON al.offer_id = mo.id
     LEFT JOIN commercial_programs cp
@@ -195,6 +219,8 @@ export async function resolveOutboundDestination(env: PersistenceEnv, offerId: s
       merchant: choice.merchant,
       merchantType: choice.metadata.merchantType,
       destinationUrl: choice.metadata.destinationUrl,
+      programId: choice.programId,
+      clickRefParam: choice.clickRefParam,
     };
   } catch (error) {
     console.error(JSON.stringify({
@@ -208,17 +234,19 @@ export async function resolveOutboundDestination(env: PersistenceEnv, offerId: s
 
 export async function persistOutboundClick(args: {
   env: PersistenceEnv;
+  clickId?: string;
   sessionId: string | null;
   evaluationId?: string | null;
   destination: OutboundDestination;
 }): Promise<string | null> {
   const db = args.env.DB;
   if (!db) return null;
-  const id = crypto.randomUUID();
+  const id = args.clickId ?? crypto.randomUUID();
   try {
     await db.prepare(`
-      INSERT INTO outbound_clicks (id, session_id, evaluation_id, offer_id, merchant_type, merchant)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO outbound_clicks (
+        id, session_id, evaluation_id, offer_id, merchant_type, merchant, program_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(
       id,
       args.sessionId,
@@ -226,6 +254,7 @@ export async function persistOutboundClick(args: {
       args.destination.offerId,
       args.destination.merchantType,
       args.destination.merchant,
+      args.destination.programId,
     ).run();
     return id;
   } catch (error) {

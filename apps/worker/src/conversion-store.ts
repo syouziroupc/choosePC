@@ -66,12 +66,12 @@ export async function upsertConversion(args: {
 
   await db.prepare(`
     INSERT INTO conversion_events (
-      id, provider, external_reference, outbound_click_id, order_value_jpy,
+      id, provider, external_reference, outbound_click_id, gross_order_jpy,
       commission_jpy, status, occurred_at, program_id, offer_id, metadata_json
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       outbound_click_id = excluded.outbound_click_id,
-      order_value_jpy = excluded.order_value_jpy,
+      gross_order_jpy = excluded.gross_order_jpy,
       commission_jpy = excluded.commission_jpy,
       status = excluded.status,
       occurred_at = excluded.occurred_at,

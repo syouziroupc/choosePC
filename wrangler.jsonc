@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "choosepc",
-  "main": "./apps/worker/src/entry.ts",
+  "main": "./apps/worker/src/production-entry.ts",
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {

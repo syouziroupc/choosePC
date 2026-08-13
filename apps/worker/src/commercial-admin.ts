@@ -12,6 +12,7 @@ export interface CommercialProgramInput {
   disclosureText?: string | null;
   sourceUrl?: string | null;
   lastVerifiedAt?: string | null;
+  clickRefParam?: string | null;
 }
 
 export interface CommercialLinkInput {
@@ -36,6 +37,13 @@ function safeHttpsUrl(raw: string): string {
   if (url.protocol !== "https:" || url.username || url.password) throw new Error("INVALID_COMMERCIAL_URL");
   url.hash = "";
   return url.toString();
+}
+
+function safeClickRefParam(value?: string | null): string | null {
+  if (value == null) return null;
+  const normalized = value.trim();
+  if (!/^[A-Za-z0-9_.-]{1,64}$/.test(normalized)) throw new Error("INVALID_CLICK_REF_PARAM");
+  return normalized;
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -79,12 +87,13 @@ export async function upsertCommercialConfiguration(args: {
   const programId = `program-${(await sha256Hex(`${normalizedMerchant}\n${args.program.programType}\n${normalizedKey}`)).slice(0, 40)}`;
   const sourceUrl = args.program.sourceUrl ? safeHttpsUrl(args.program.sourceUrl) : null;
   const commission = commissionJson(args.program.commissionMetadata);
+  const clickRefParam = safeClickRefParam(args.program.clickRefParam);
 
   await db.prepare(`
     INSERT INTO commercial_programs (
       id, merchant, program_type, status, commission_json, disclosure_text,
-      source_url, last_verified_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      source_url, last_verified_at, click_ref_param, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO UPDATE SET
       merchant = excluded.merchant,
       program_type = excluded.program_type,
@@ -93,6 +102,7 @@ export async function upsertCommercialConfiguration(args: {
       disclosure_text = excluded.disclosure_text,
       source_url = excluded.source_url,
       last_verified_at = excluded.last_verified_at,
+      click_ref_param = excluded.click_ref_param,
       updated_at = CURRENT_TIMESTAMP
   `).bind(
     programId,
@@ -103,6 +113,7 @@ export async function upsertCommercialConfiguration(args: {
     args.program.disclosureText?.trim() || null,
     sourceUrl,
     args.program.lastVerifiedAt ?? null,
+    clickRefParam,
   ).run();
 
   const linkIds: string[] = [];

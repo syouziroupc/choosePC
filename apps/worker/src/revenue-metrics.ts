@@ -90,7 +90,7 @@ export async function loadRevenueMetrics(env: PersistenceEnv, requestedDays = 30
       SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved_conversions,
       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_conversions,
       SUM(CASE WHEN status IN ('rejected', 'cancelled', 'refunded') THEN 1 ELSE 0 END) AS rejected_or_reversed,
-      COALESCE(SUM(CASE WHEN status = 'approved' THEN order_value_jpy ELSE 0 END), 0) AS approved_order_value_jpy,
+      COALESCE(SUM(CASE WHEN status = 'approved' THEN gross_order_jpy ELSE 0 END), 0) AS approved_order_value_jpy,
       COALESCE(SUM(CASE WHEN status = 'approved' THEN commission_jpy ELSE 0 END), 0) AS approved_commission_jpy,
       COALESCE(SUM(CASE WHEN status = 'pending' THEN commission_jpy ELSE 0 END), 0) AS pending_commission_jpy
     FROM conversion_events
@@ -112,7 +112,7 @@ export async function loadRevenueMetrics(env: PersistenceEnv, requestedDays = 30
       cp.program_type,
       COUNT(DISTINCT oc.id) AS clicks,
       COUNT(DISTINCT CASE WHEN ce.status = 'approved' THEN ce.id END) AS approved_conversions,
-      COALESCE(SUM(CASE WHEN ce.status = 'approved' THEN ce.order_value_jpy ELSE 0 END), 0) AS approved_order_value_jpy,
+      COALESCE(SUM(CASE WHEN ce.status = 'approved' THEN ce.gross_order_jpy ELSE 0 END), 0) AS approved_order_value_jpy,
       COALESCE(SUM(CASE WHEN ce.status = 'approved' THEN ce.commission_jpy ELSE 0 END), 0) AS approved_commission_jpy,
       COALESCE(SUM(CASE WHEN ce.status = 'pending' THEN ce.commission_jpy ELSE 0 END), 0) AS pending_commission_jpy
     FROM outbound_clicks oc
@@ -149,9 +149,7 @@ export async function loadRevenueMetrics(env: PersistenceEnv, requestedDays = 30
     approvedCommissionJpy: approvedCommission,
     pendingCommissionJpy: numeric(conversion?.pending_commission_jpy),
     clickToApprovedConversionPct: pct(approvedConversions, outboundClicks),
-    normalized30DayApprovedCommissionJpy: approvedCommission > 0
-      ? Math.round((approvedCommission / windowDays) * 30)
-      : approvedCommission === 0 ? 0 : null,
+    normalized30DayApprovedCommissionJpy: Math.round((approvedCommission / windowDays) * 30),
     topPrograms: (programs.results ?? []).map((row) => ({
       programId: row.program_id,
       merchant: row.merchant,

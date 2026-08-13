@@ -5,7 +5,7 @@ function fakeDb() {
   return {
     prepare(sql: string) {
       return {
-        bind() {
+        bind(..._args: unknown[]) {
           if (/recommendation_runs/i.test(sql) && /outbound_clicks/i.test(sql)) {
             return { async first() { return { evaluations: 120, recommendation_runs: 48, outbound_clicks: 20 }; } };
           }
