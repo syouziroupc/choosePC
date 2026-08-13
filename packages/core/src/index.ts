@@ -8,6 +8,7 @@ export * from "./market";
 export * from "./signature";
 export * from "./monetization";
 export * from "./revenue";
+export * from "./merchant-parser";
 export * from "./url";
 export * from "./recommendation";
 export * from "./replacement";
