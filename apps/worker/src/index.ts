@@ -31,6 +31,7 @@ import {
   type TrustedMarketObservation,
   type TrustedMarketSource,
 } from "./market-store";
+import { loadNeutralOfferCandidates } from "./offer-search";
 import {
   persistAnalytics,
   persistEvaluation,
@@ -318,6 +319,29 @@ function validRecommendationCandidates(value: unknown): value is RecommendationC
   return true;
 }
 
+function validOfferFilters(body: { category?: unknown; maxPriceJpy?: unknown; conditions?: unknown }): boolean {
+  if (body.category != null && (typeof body.category !== "string" || !DEVICE_CATEGORIES.has(body.category))) return false;
+  if (body.maxPriceJpy != null && (typeof body.maxPriceJpy !== "number" || !Number.isFinite(body.maxPriceJpy) || body.maxPriceJpy < 0 || body.maxPriceJpy > 100_000_000)) return false;
+  if (body.conditions != null) {
+    if (!Array.isArray(body.conditions) || body.conditions.length === 0 || body.conditions.length > CONDITION_TYPES.size) return false;
+    if (body.conditions.some((condition) => typeof condition !== "string" || !CONDITION_TYPES.has(condition))) return false;
+  }
+  return true;
+}
+
+async function enrichCandidatesWithStoredMarket(env: Env, source: readonly RecommendationCandidate[]): Promise<RecommendationCandidate[]> {
+  const candidates: RecommendationCandidate[] = [];
+  for (const candidate of source) {
+    if (candidate.market) {
+      candidates.push(candidate);
+      continue;
+    }
+    const stored = await lookupStoredMarket(env, candidate.pc);
+    candidates.push({ ...candidate, market: stored?.estimate ?? null });
+  }
+  return candidates;
+}
+
 function outboundOfferId(pathname: string): string | null {
   const match = pathname.match(/^\/api\/v1\/outbound\/([^/]{1,160})$/);
   if (!match) return null;
@@ -508,17 +532,7 @@ export default {
         if (!validRecommendationCandidates(body.candidates)) return json({ error: "INVALID_CANDIDATES" }, 400, sessionHeaders(session));
         const profile = resolveProfile(body);
         if (!profile) return json({ error: "INVALID_USE_CASE" }, 400, sessionHeaders(session));
-
-        const candidates: RecommendationCandidate[] = [];
-        for (const candidate of body.candidates) {
-          if (candidate.market) {
-            candidates.push(candidate);
-            continue;
-          }
-          const stored = await lookupStoredMarket(env, candidate.pc);
-          candidates.push({ ...candidate, market: stored?.estimate ?? null });
-        }
-
+        const candidates = await enrichCandidatesWithStoredMarket(env, body.candidates);
         const ranked = evaluateAndRankCandidates({
           candidates,
           profile,
@@ -555,6 +569,72 @@ export default {
           knowledgeVersion: "knowledge-2026-08-13.1",
         }));
         return json({ ranked: responseRanking, commercialOffers }, 200, sessionHeaders(session));
+      }
+
+      if (url.pathname === "/api/v1/offers/recommend" && request.method === "POST") {
+        const session = getSession(request);
+        const body = await readJson<{
+          useCase?: string;
+          category?: unknown;
+          maxPriceJpy?: unknown;
+          conditions?: unknown;
+          gaming?: { resolution?: "1080p" | "1440p" | "4k"; targetFps?: 60 | 120 | 144 | 240 };
+        }>(request);
+        if (!validOfferFilters(body)) return json({ error: "INVALID_OFFER_FILTERS" }, 400, sessionHeaders(session));
+        const profile = resolveProfile(body);
+        if (!profile) return json({ error: "INVALID_USE_CASE" }, 400, sessionHeaders(session));
+
+        const search = await loadNeutralOfferCandidates(env, {
+          category: body.category as string | undefined,
+          maxPriceJpy: body.maxPriceJpy as number | undefined,
+          conditions: body.conditions as string[] | undefined,
+          maxCandidates: MAX_RECOMMENDATION_CANDIDATES,
+        });
+        const candidates = await enrichCandidatesWithStoredMarket(env, search.candidates);
+        const ranked = evaluateAndRankCandidates({
+          candidates,
+          profile,
+          engineVersion: "0.2.0",
+          knowledgeVersion: "knowledge-2026-08-13.1",
+        });
+        const responseRanking = ranked.map((item, index) => ({
+          rank: index + 1,
+          candidateId: item.candidateId,
+          result: item.result,
+        }));
+        const commercialOffers = await resolveCommercialPresentations({
+          env,
+          ranked: ranked.map((item, index) => ({
+            offerId: item.candidateId,
+            rank: index + 1,
+            evaluationScore: item.result.scores.overall,
+          })),
+        });
+        defer(ctx, persistRecommendation({
+          env,
+          sessionId: session.id,
+          profile,
+          ranked: ranked.map((item, index) => ({
+            candidateId: item.candidateId,
+            rank: index + 1,
+            decision: item.result.decision,
+            overall: item.result.scores.overall,
+            fit: item.result.scores.fit,
+            value: item.result.scores.value,
+            confidence: item.result.scores.confidence,
+          })),
+          engineVersion: "0.2.0",
+          knowledgeVersion: "knowledge-2026-08-13.1",
+        }));
+        return json({
+          ranked: responseRanking,
+          commercialOffers,
+          search: {
+            scannedRows: search.scannedRows,
+            skippedRows: search.skippedRows,
+            candidateCount: search.candidates.length,
+          },
+        }, 200, sessionHeaders(session));
       }
 
       return json({ error: "NOT_FOUND" }, 404);
