@@ -12,6 +12,8 @@ type CommercialRow = {
   title: string;
   price_jpy: number;
   product_url: string;
+  program_id: string | null;
+  attribution_id: string | null;
   program_type: MerchantType | null;
   program_status: string | null;
   destination_url: string | null;
@@ -48,6 +50,23 @@ function safeHttpsUrl(raw: string): string | null {
   }
 }
 
+function commercialPriority(type: MerchantType | null): number {
+  if (type === "own") return 0;
+  if (type === "affiliate") return 1;
+  if (type === "normal") return 2;
+  return 3;
+}
+
+function compareCommercialRows(a: CommercialRow, b: CommercialRow): number {
+  const priority = commercialPriority(a.program_type) - commercialPriority(b.program_type);
+  if (priority !== 0) return priority;
+  const program = (a.program_id ?? "").localeCompare(b.program_id ?? "");
+  if (program !== 0) return program;
+  const attribution = (a.attribution_id ?? "").localeCompare(b.attribution_id ?? "");
+  if (attribution !== 0) return attribution;
+  return (a.destination_url ?? "").localeCompare(b.destination_url ?? "");
+}
+
 function commercialChoice(rows: readonly CommercialRow[]): {
   metadata: CommercialOfferMetadata;
   merchant: string;
@@ -57,11 +76,11 @@ function commercialChoice(rows: readonly CommercialRow[]): {
 } | null {
   if (!rows.length) return null;
 
-  const withActiveProgram = rows.filter((row) => row.program_status === "active" && row.program_type && row.destination_url);
-  const selected = withActiveProgram.find((row) => row.program_type === "own")
-    ?? withActiveProgram.find((row) => row.program_type === "affiliate")
-    ?? withActiveProgram[0]
-    ?? rows[0];
+  const active = rows
+    .filter((row) => row.program_status === "active" && row.program_type && row.destination_url)
+    .slice()
+    .sort(compareCommercialRows);
+  const selected = active[0] ?? rows[0];
 
   const programType = selected.program_status === "active" && selected.program_type ? selected.program_type : "normal";
   const destination = safeHttpsUrl(
@@ -96,13 +115,17 @@ async function loadRows(env: PersistenceEnv, offerIds: readonly string[]): Promi
       mo.title,
       mo.price_jpy,
       mo.product_url,
+      cp.id AS program_id,
+      al.id AS attribution_id,
       cp.program_type,
       cp.status AS program_status,
       al.destination_url,
       cp.disclosure_text
     FROM merchant_offers mo
     LEFT JOIN attribution_links al ON al.offer_id = mo.id
-    LEFT JOIN commercial_programs cp ON cp.id = al.program_id
+    LEFT JOIN commercial_programs cp
+      ON cp.id = al.program_id
+      AND lower(trim(cp.merchant)) = lower(trim(mo.merchant))
     WHERE mo.id IN (${placeholders})
       AND (mo.expires_at IS NULL OR mo.expires_at >= CURRENT_TIMESTAMP)
   `).bind(...offerIds).all<CommercialRow>();
