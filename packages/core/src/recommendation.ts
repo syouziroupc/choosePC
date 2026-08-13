@@ -1,5 +1,5 @@
 import { resolveHardware } from "./catalog";
-import { evaluatePc } from "./evaluation";
+import { evaluatePc } from "./current-evaluation";
 import type { Decision, EvaluationResult, MarketEstimate, NormalizedPC, UseCaseProfile } from "./types";
 
 export interface CandidateEvaluation { candidateId: string; result: EvaluationResult }
