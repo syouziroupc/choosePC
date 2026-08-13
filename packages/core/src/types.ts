@@ -55,6 +55,8 @@ export interface ResolvedHardware {
   gpuId?: string | null;
   cpu?: CpuCapabilities | null;
   gpu?: GpuCapabilities | null;
+  gpuVramGb?: number | null;
+  gpuVariant?: GpuVariant | null;
   cpuConfidence: number;
   gpuConfidence: number;
 }
