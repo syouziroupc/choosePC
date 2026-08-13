@@ -109,11 +109,13 @@ function detectCatalogLabel(text: string, type: "cpu" | "gpu"): string | null {
 
 function parseMemory(text: string): number | null {
   const patterns = [
-    /(?:ram|memory|メモリ)[^0-9]{0,16}(\d{1,4})\s*gb/gi,
-    /(\d{1,4})\s*gb[^\n<]{0,12}(?:ram|memory|メモリ)/gi,
+    /(\d{1,4})\s*gb\s*(?:ram|memory|メモリ)/gi,
+    /(?:ram|memory|メモリ)\s*[:：=]?\s*(\d{1,4})\s*gb/gi,
   ];
   for (const pattern of patterns) {
-    const candidates = [...text.matchAll(pattern)].map((match) => Number(match[1])).filter((value) => value >= 4 && value <= 4096);
+    const candidates = [...text.matchAll(pattern)]
+      .map((match) => Number(match[1]))
+      .filter((value) => value >= 4 && value <= 4096);
     if (candidates.length) return candidates[0];
   }
   return null;
