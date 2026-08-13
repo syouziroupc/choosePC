@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ENGINE_VERSION, evaluateAndRankCandidates, evaluatePc } from "../src/index";
+import { ENGINE_VERSION, KNOWLEDGE_VERSION, evaluateAndRankCandidates, evaluatePc } from "../src/index";
 import type { NormalizedPC, UseCaseProfile } from "../src/types";
 
 const pc: NormalizedPC = {
@@ -19,29 +19,31 @@ const profile: UseCaseProfile = {
   requirements: [],
 };
 
-describe("active engine version provenance", () => {
-  it("does not allow a caller to relabel a current evaluation as an older engine", () => {
+describe("active engine and knowledge version provenance", () => {
+  it("does not allow a caller to relabel a current evaluation with stale versions", () => {
     const result = evaluatePc({
       pc,
       profile,
       hardware: { cpu: null, gpu: null, cpuConfidence: 95, gpuConfidence: 95 },
       market: null,
       engineVersion: "0.2.0",
-      knowledgeVersion: "test-knowledge",
+      knowledgeVersion: "stale-knowledge",
     });
 
     expect(result.engineVersion).toBe(ENGINE_VERSION);
+    expect(result.knowledgeVersion).toBe(KNOWLEDGE_VERSION);
   });
 
-  it("keeps recommendation evaluations on the same active engine version", () => {
+  it("keeps recommendation evaluations on the same active versions", () => {
     const ranked = evaluateAndRankCandidates({
       candidates: [{ candidateId: "candidate-1", pc, market: null }],
       profile,
       engineVersion: "0.2.0",
-      knowledgeVersion: "test-knowledge",
+      knowledgeVersion: "stale-knowledge",
     });
 
     expect(ranked).toHaveLength(1);
     expect(ranked[0].result.engineVersion).toBe(ENGINE_VERSION);
+    expect(ranked[0].result.knowledgeVersion).toBe(KNOWLEDGE_VERSION);
   });
 });
