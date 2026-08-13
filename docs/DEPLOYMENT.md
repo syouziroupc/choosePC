@@ -75,15 +75,18 @@ npx wrangler d1 execute choosepc --remote --file=/tmp/choosepc-knowledge-seed.sq
 
 The seed is designed to be rerun safely. It writes `knowledge_versions`, hardware catalogs, source documents and evidence links from repository data.
 
-## Configure trusted-ingestion secret
+## Configure trusted-ingestion secrets
 
-Set the internal market-ingestion token as a Worker secret, not as plaintext configuration:
+Set both ingestion tokens as Worker secrets rather than plaintext configuration:
 
 ```bash
 npx wrangler secret put MARKET_INGEST_TOKEN
+npx wrangler secret put OFFER_INGEST_TOKEN
 ```
 
-If this secret is absent, `/api/internal/market/observe` remains unavailable. Do not enable trusted collectors until the token is configured and D1 migrations are complete.
+`MARKET_INGEST_TOKEN` protects trusted market observations. `OFFER_INGEST_TOKEN` protects neutral merchant-offer ingestion. If either secret is absent, its corresponding internal route is concealed as unavailable. The tokens should be distinct so a merchant feed cannot automatically gain authority to create trusted market evidence.
+
+Do not enable collectors until D1 migrations and the knowledge seed have completed successfully.
 
 ## Remote verification before public offer rollout
 
@@ -101,11 +104,13 @@ Then deploy the Worker and smoke-test, in order:
 2. `/api/v1/catalog`
 3. manual `/api/v1/evaluate`
 4. `/api/v1/market/lookup`
-5. authenticated internal market observation in a non-production test record
-6. `/api/v1/offers/recommend`
-7. `/api/v1/outbound/:offerId` with a controlled test offer
-8. desktop/mobile visual review
+5. authenticated `/api/internal/market/observe` with a controlled non-production observation
+6. authenticated `/api/internal/offers/upsert` with a controlled neutral test offer
+7. `/api/v1/offers/recommend` and confirmation that rank is unchanged by commercial metadata
+8. `/api/v1/outbound/:offerId` with a controlled commercial test link
+9. direct D1 check that neutral `merchant_offers.affiliate_url` remains NULL
+10. desktop/mobile visual review
 
 ## Rollout rule
 
-The manual diagnosis path may remain usable without D1. Server-sourced market evidence, merchant recommendation and monetized outbound paths must not be advertised as operational until the target D1 database, migrations, knowledge seed, ingestion secret and test merchant data have all been verified in the deployed environment.
+The manual diagnosis path may remain usable without D1. Server-sourced market evidence, merchant recommendation and monetized outbound paths must not be advertised as operational until the target D1 database, migrations, knowledge seed, both ingestion secrets and controlled merchant data have all been verified in the deployed environment.
