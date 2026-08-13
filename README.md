@@ -1,44 +1,49 @@
-# PC ASSIST
+# choosePC / PC ASSIST
 
-PC ASSIST is a decision-support service for buying, replacing, keeping, repairing, and selling personal computers.
+PC ASSIST is a decision-support service operated by 正二郎商事株式会社. It helps users decide whether to buy, keep/upgrade, replace, or sell a PC without allowing commercial payout to affect evaluation.
 
 ## Product priorities
 
-1. User friendliness and decision quality.
-2. Recognition and trust for 正二郎商事.
-3. Monetization after the recommendation is fixed.
+1. User-friendly and useful judgement.
+2. Build recognition and trust for 正二郎商事.
+3. Monetize the action after the judgement, not the judgement itself.
 
-The scoring/ranking layer MUST NOT read affiliate commission values.
+## Current supported categories
 
-## Initial scope
+- general/mobile laptops
+- gaming laptops
+- general/gaming desktops
+- BTO/custom desktops
+- mini PCs
+- workstations
+- Mac category reserved for later data coverage
 
-- General laptops
-- Mobile laptops
-- Gaming laptops
-- General desktops
-- Gaming desktops
-- BTO / custom builds
-- Mini PCs
-- Workstations
-- Used/refurbished machines
-- Mac support is reserved for a later milestone
+Gaming laptops are evaluated separately. GPU model alone is not enough; TGP, VRAM, CPU, cooling, display, RAM, storage and evidence quality matter when known.
 
-## Repository layout
+## Decision architecture
 
-- `docs/` — product, system, revenue, API, analytics and security specifications
-- `schemas/` — canonical JSON schemas
-- `knowledge/` — reviewed knowledge source-of-truth data
-- `migrations/` — D1/SQLite migrations
-- `packages/core/` — deterministic evaluation and revenue-domain logic
-- `apps/worker/` — API Worker skeleton
-- `.github/workflows/` — CI checks
+`NormalizedPC -> use-case requirements -> hard constraints -> market value -> confidence -> scores -> decision -> frozen ranking -> monetization metadata`
 
-## Canonical flow
+Known critical failures cannot be hidden by a high average score. Missing critical evidence produces `insufficient_data`. Affiliate commission and own-stock status are not accepted by ranking functions.
 
-`URL / manual input -> extraction -> NormalizedPC -> deterministic evaluation -> decision -> recommendation -> monetization resolver`
+## Development
 
-AI is used for extraction, natural-language interpretation, missing-data questions and explanation. It is not allowed to invent benchmark values, market prices, model identifiers or rankings.
+```bash
+npm install
+npm run check
+npm run dev
+```
 
-## Status
+CI runs knowledge validation, TypeScript checks, unit/regression tests, the web build, and a Wrangler deploy dry-run.
 
-Bootstrap design baseline for `syouziroupc/choosePC`. Runtime infrastructure and the React UI are intentionally not provisioned yet.
+## Main API
+
+- `GET /api/v1/health`
+- `GET /api/v1/catalog`
+- `POST /api/v1/url/inspect`
+- `POST /api/v1/evaluate`
+- `POST /api/v1/replace`
+- `POST /api/v1/sell`
+- `POST /api/v1/events`
+
+See `docs/` for the decision policy, data governance, security and deployment requirements.

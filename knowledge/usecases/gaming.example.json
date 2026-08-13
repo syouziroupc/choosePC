@@ -1,21 +1,10 @@
 {
   "id": "gaming_general_v1",
-  "name": "General gaming",
+  "name": "General gaming input model",
   "category": "gaming",
   "requirements": {
-    "questions": ["game", "resolution", "quality", "target_fps_class", "streaming"]
+    "questions": ["resolution", "target_fps", "ram", "vram"],
+    "note": "Production scoring uses deterministic requirement bands in packages/core/src/presets.ts. Game-specific measured FPS is never invented."
   },
-  "weights": {
-    "gpu_game_fit": 0.30,
-    "cpu_game_fit": 0.15,
-    "cooling": 0.12,
-    "gpu_power": 0.08,
-    "vram": 0.08,
-    "ram": 0.07,
-    "display": 0.08,
-    "storage": 0.04,
-    "upgradeability": 0.03,
-    "mobility": 0.05
-  },
-  "status": "draft"
+  "status": "template-only"
 }

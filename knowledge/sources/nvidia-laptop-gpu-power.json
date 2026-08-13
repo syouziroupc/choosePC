@@ -1,0 +1,5 @@
+[
+  {"id":"src-nvidia-rtx30-laptop-compare","publisher":"NVIDIA","title":"Compare GeForce Gaming RTX 30 Series Laptops","url":"https://www.nvidia.com/en-us/geforce/laptops/compare/30-series/","retrievedAt":"2026-08-13","status":"verified","confidence":100},
+  {"id":"src-nvidia-rtx40-laptop-compare","publisher":"NVIDIA","title":"GeForce RTX 40 Series Laptop comparison","url":"https://www.nvidia.com/ja-jp/geforce/laptops/compare/","retrievedAt":"2026-08-13","status":"verified","confidence":100},
+  {"id":"src-nvidia-rtx50-laptop-series","publisher":"NVIDIA","title":"GeForce RTX 50 Series Laptops","url":"https://www.nvidia.com/ja-jp/geforce/laptops/50-series/","retrievedAt":"2026-08-13","status":"verified","confidence":100}
+]

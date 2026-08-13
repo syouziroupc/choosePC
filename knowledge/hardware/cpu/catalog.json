@@ -1,0 +1,10 @@
+[
+  {"id":"intel-i5-8365u","label":"Intel Core i5-8365U","aliases":["i5-8365u","core i5-8365u"],"capabilities":{"general":46,"single":48,"multi":36,"gaming":42,"efficiency":58},"confidence":62,"status":"provisional","method":"internal-relative-index-v0.1","sources":[]},
+  {"id":"intel-i5-1135g7","label":"Intel Core i5-1135G7","aliases":["i5-1135g7","core i5-1135g7"],"capabilities":{"general":58,"single":62,"multi":45,"gaming":54,"efficiency":66},"confidence":62,"status":"provisional","method":"internal-relative-index-v0.1","sources":[]},
+  {"id":"intel-i5-1235u","label":"Intel Core i5-1235U","aliases":["i5-1235u","core i5-1235u"],"capabilities":{"general":68,"single":72,"multi":59,"gaming":63,"efficiency":70},"confidence":62,"status":"provisional","method":"internal-relative-index-v0.1","sources":[]},
+  {"id":"amd-r5-5600u","label":"AMD Ryzen 5 5600U","aliases":["ryzen 5 5600u","r5 5600u"],"capabilities":{"general":66,"single":64,"multi":63,"gaming":58,"efficiency":72},"confidence":62,"status":"provisional","method":"internal-relative-index-v0.1","sources":[]},
+  {"id":"amd-r5-5600h","label":"AMD Ryzen 5 5600H","aliases":["ryzen 5 5600h","r5 5600h"],"capabilities":{"general":73,"single":67,"multi":76,"gaming":67,"efficiency":58},"confidence":62,"status":"provisional","method":"internal-relative-index-v0.1","sources":[]},
+  {"id":"intel-i5-12400f","label":"Intel Core i5-12400F","aliases":["i5-12400f","core i5-12400f"],"capabilities":{"general":79,"single":80,"multi":82,"gaming":81,"efficiency":52},"confidence":62,"status":"provisional","method":"internal-relative-index-v0.1","sources":[]},
+  {"id":"amd-r5-7600","label":"AMD Ryzen 5 7600","aliases":["ryzen 5 7600","r5 7600"],"capabilities":{"general":86,"single":88,"multi":86,"gaming":89,"efficiency":62},"confidence":62,"status":"provisional","method":"internal-relative-index-v0.1","sources":[]},
+  {"id":"amd-r7-7800x3d","label":"AMD Ryzen 7 7800X3D","aliases":["ryzen 7 7800x3d","7800x3d"],"capabilities":{"general":92,"single":88,"multi":94,"gaming":100,"efficiency":66},"confidence":62,"status":"provisional","method":"internal-relative-index-v0.1","sources":[]}
+]
