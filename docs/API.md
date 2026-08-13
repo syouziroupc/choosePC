@@ -59,7 +59,15 @@ Authenticated ingestion boundary for neutral merchant offer facts. Requires `Aut
 
 Each offer contains merchant, title, canonical price, HTTPS product URL, controlled stock state, normalized PC data, observation time, and optional expiry time. The server derives the product signature and a stable offer ID from normalized merchant identity plus product URL. Repeated collection of the same merchant URL updates the existing row rather than creating an unbounded duplicate series.
 
+Offer freshness is a shared invariant. If `expiresAt` is omitted, the server stores an effective expiry 30 days after `observedAt`. The authenticated API rejects an explicit expiry more than 30 days after observation, the persistence layer caps direct calls defensively, and migration `0005_offer_freshness.sql` normalizes legacy rows and applies the same cap at the database boundary.
+
 Commercial fields are rejected at this boundary. `affiliateUrl`, commission values, program identifiers and destination overrides cannot be supplied here. `merchant_offers.affiliate_url` is explicitly written as `NULL` on insert/update. Commercial programs and attribution destinations remain a separate post-ranking concern.
+
+## GET /api/internal/offers/status
+
+Protected collector-health endpoint using the same `OFFER_INGEST_TOKEN` authority. It reports the 30-day freshness window, total and currently recommendation-eligible offer counts, stale/expired/unavailable counts, offers expiring within 24 hours, the newest observation timestamp, and up to 100 merchant summaries with total/eligible counts and latest observation time.
+
+`stale`, `expired`, and `unavailable` are diagnostic dimensions and can overlap; `eligible` is the strict recommendation-usable subset. The endpoint is operational telemetry only and does not alter ranking or commercial metadata.
 
 ## POST /api/internal/commercial/upsert
 
@@ -139,9 +147,9 @@ Commercial metadata cannot alter rank or evaluation score. If D1/commercial look
 
 Server-sourced recommendation route. It accepts neutral filters such as use case, device category, maximum price, condition, and gaming target.
 
-The offer loader reads only candidate ID, canonical row price, normalized PC data and observation timestamp before evaluation. Merchant identity, product title, affiliate URL, commercial program and commission data are excluded from the pre-ranking query. The sequence is:
+The offer loader reads only candidate ID, canonical row price, normalized PC data and observation timestamp before evaluation. Merchant identity, product title, affiliate URL, commercial program and commission data are excluded from the pre-ranking query. Offers older than 30 days, explicitly expired offers, and known `out_of_stock` / `sold` / `unavailable` rows are excluded before evaluation. The sequence is:
 
-1. load eligible D1 offers using neutral filters;
+1. load eligible D1 offers using neutral filters and shared freshness/availability rules;
 2. enrich missing market evidence from trusted stored observations;
 3. calculate and freeze evaluation ranking;
 4. resolve merchant/commercial metadata for the already-ranked offer IDs;
@@ -152,6 +160,8 @@ This is the primary backend path for production recommendation monetization.
 ## GET /api/v1/outbound/:offerId
 
 Resolves an already stored offer destination from D1, records an outbound click when possible and responds with a redirect. The caller cannot supply a destination URL. Only stored HTTPS destinations are accepted, preventing use as an arbitrary open redirect.
+
+The outbound resolver re-applies the same 30-day freshness, expiry, and stock-state eligibility gates used by neutral offer search. A stale, expired, sold, out-of-stock, or unavailable offer therefore cannot remain reachable merely because its offer ID is known.
 
 Commercial program selection is deterministic after rank is frozen. Only programs whose merchant matches the offer merchant are eligible. A usable own-source program is selected before affiliate, then normal; ties within a type are resolved by stable identifiers rather than database row order. If no active program is usable, the neutral product URL is used.
 

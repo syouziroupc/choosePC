@@ -2,7 +2,7 @@
 
 ## Phase 0 — repository foundation
 
-Design baseline, CI, D1 schema/migrations and regression fixtures. **Implemented; dependency lock commit and real deployment binding remain.**
+Design baseline, CI, D1 schema/migrations, dependency lock and regression fixtures. **Implemented; real deployment binding remains.**
 
 ## v0.1 — deterministic manual evaluation
 
@@ -14,7 +14,7 @@ Secure fetch boundary, JSON-LD/OpenGraph/generic parser, supported-domain allowl
 
 ## v0.3 — offer search and monetization
 
-Robust market estimator, trusted-vs-user evidence boundary, neutral offer ingestion/search, server-sourced ranking, frozen-rank commercial administration/resolution, outbound attribution, commercial disclosure and public ranked-offer UI. **Core end-to-end application path is implemented and interactively visually validated.** Remaining work is live observation/offer collection, real D1 deployment, conversion ingestion and production data.
+Robust market estimator, trusted-vs-user evidence boundary, neutral offer ingestion/search, server-sourced ranking, frozen-rank commercial administration/resolution, outbound attribution, commercial disclosure and public ranked-offer UI. **Core end-to-end application path is implemented and interactively visually validated.** Remaining work is live observation/offer collection, real D1 deployment and production data.
 
 ## v0.4 — own sales
 
@@ -34,11 +34,11 @@ Game profiles, gaming-laptop TGP/cooling/display depth and verified benchmark ob
 
 ## v0.8 — market refresh
 
-Trusted scheduled observations, stale-offer maintenance, Queue/Workflow refresh pipeline, outlier handling and freshness metrics. Robust estimation and authenticated ingestion boundaries exist; automated collection/scheduling remains.
+Trusted scheduled observations, stale-offer maintenance, Queue/Workflow refresh pipeline, outlier handling and freshness metrics. **The authenticated ingestion boundaries, robust estimator, hard 30-day offer freshness rules, D1 freshness triggers and protected collector-health status are implemented.** Automated merchant collection and scheduling remain.
 
 ## v0.9 — revenue/quality dashboard
 
-Funnel, category contribution, parser failures, outbound attribution, conversion imports and scoring regressions. Event/click/conversion persistence schema exists; aggregation/query/import layer remains.
+Funnel, category contribution, parser failures, outbound attribution, conversion imports and scoring regressions. **Protected conversion import and observed revenue/funnel aggregation are implemented.** Operator-facing dashboard UI, richer parser/quality reporting and deployed-data validation remain.
 
 ## v1.0 — integrated launch
 
