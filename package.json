@@ -11,7 +11,7 @@
     "deploy": "npm run build && wrangler deploy",
     "deploy:dry": "npm run build && wrangler deploy --dry-run",
     "validate:knowledge": "node scripts/validate_knowledge.mjs",
-    "test": "vitest run",
+    "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "npm run validate:knowledge && npm run typecheck && npm test && npm run build"
   },
