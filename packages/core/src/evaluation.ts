@@ -24,13 +24,15 @@ function scoreHardware(input: EvaluationInput): number {
   const ram = clamp(((pc.memory?.sizeGb ?? 8) / 32) * 100);
   const storage = clamp(((pc.storage?.reduce((sum, item) => sum + (item.sizeGb ?? 0), 0) ?? 256) / 1024) * 100);
   const cooling = pc.extra?.coolingScore ?? 55;
-  if (isGamingCategory(pc.category)) return weightedAverage([
-    { value: hardware.cpu?.gaming ?? cpu, weight: 0.24 },
-    { value: gpu, weight: 0.42 },
-    { value: ram, weight: 0.12 },
-    { value: storage, weight: 0.08 },
-    { value: cooling, weight: 0.14 },
-  ]);
+  if (isGamingCategory(pc.category)) {
+    return weightedAverage([
+      { value: hardware.cpu?.gaming ?? cpu, weight: 0.24 },
+      { value: gpu, weight: 0.42 },
+      { value: ram, weight: 0.12 },
+      { value: storage, weight: 0.08 },
+      { value: cooling, weight: 0.14 },
+    ]);
+  }
   return weightedAverage([
     { value: cpu, weight: 0.46 },
     { value: ram, weight: 0.24 },
@@ -46,10 +48,12 @@ function scoreCondition(input: EvaluationInput): number {
   const gradeAdjustment: Record<string, number> = { S: 12, A: 8, B: 2, C: -10, D: -25, unknown: 0 };
   let result = base + gradeAdjustment[pc.condition.grade ?? "unknown"];
   const battery = pc.condition.batteryHealthPct;
-  if (battery != null && (pc.category.includes("laptop") || pc.category === "mac")) result += battery >= 85 ? 5 : battery >= 70 ? 0 : battery >= 55 ? -8 : -18;
+  if (battery != null && (pc.category.includes("laptop") || pc.category === "mac")) {
+    result += battery >= 85 ? 5 : battery >= 70 ? 0 : battery >= 55 ? -8 : -18;
+  }
   result -= Math.min(30, (pc.condition.defects?.length ?? 0) * 8);
   if ((pc.commerce.warrantyDays ?? 0) >= 90) result += 4;
-  if ((pc.commerce.warrantyDays ?? 0) === 0 && pc.condition.type !== "new") result -= 4;
+  if ((pc.commerce.warrantyDays ?? 0) === 0) result -= 4;
   return clamp(result);
 }
 
