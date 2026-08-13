@@ -55,7 +55,7 @@ npx wrangler d1 migrations list choosepc --remote
 npx wrangler d1 migrations apply choosepc --remote
 ```
 
-Do not seed application data before all repository migrations have applied successfully.
+Do not seed application data before all repository migrations have applied successfully. Migration `0003_commercial_integrity.sql` adds the attribution merchant-match guard, unique offer/program pair and cleanup trigger; deployment validation must include it.
 
 ## Seed versioned hardware knowledge
 
@@ -75,18 +75,23 @@ npx wrangler d1 execute choosepc --remote --file=/tmp/choosepc-knowledge-seed.sq
 
 The seed is designed to be rerun safely. It writes `knowledge_versions`, hardware catalogs, source documents and evidence links from repository data.
 
-## Configure trusted-ingestion secrets
+## Configure internal secrets
 
-Set both ingestion tokens as Worker secrets rather than plaintext configuration:
+Set all three authority domains as separate Worker secrets rather than plaintext configuration:
 
 ```bash
 npx wrangler secret put MARKET_INGEST_TOKEN
 npx wrangler secret put OFFER_INGEST_TOKEN
+npx wrangler secret put COMMERCIAL_ADMIN_TOKEN
 ```
 
-`MARKET_INGEST_TOKEN` protects trusted market observations. `OFFER_INGEST_TOKEN` protects neutral merchant-offer ingestion. If either secret is absent, its corresponding internal route is concealed as unavailable. The tokens should be distinct so a merchant feed cannot automatically gain authority to create trusted market evidence.
+- `MARKET_INGEST_TOKEN` authorizes trusted market evidence.
+- `OFFER_INGEST_TOKEN` authorizes neutral merchant-offer facts.
+- `COMMERCIAL_ADMIN_TOKEN` authorizes downstream program, disclosure, commission and outbound-destination configuration.
 
-Do not enable collectors until D1 migrations and the knowledge seed have completed successfully.
+The tokens should be distinct. A merchant feed must not automatically gain authority to create trusted market evidence or change monetization destinations. If a token is absent, its corresponding internal route is concealed as unavailable.
+
+Do not enable collectors or commercial administration until D1 migrations and the knowledge seed have completed successfully.
 
 ## Remote verification before public offer rollout
 
@@ -106,11 +111,13 @@ Then deploy the Worker and smoke-test, in order:
 4. `/api/v1/market/lookup`
 5. authenticated `/api/internal/market/observe` with a controlled non-production observation
 6. authenticated `/api/internal/offers/upsert` with a controlled neutral test offer
-7. `/api/v1/offers/recommend` and confirmation that rank is unchanged by commercial metadata
-8. `/api/v1/outbound/:offerId` with a controlled commercial test link
-9. direct D1 check that neutral `merchant_offers.affiliate_url` remains NULL
-10. desktop/mobile visual review
+7. `/api/v1/offers/recommend` before any commercial configuration and record the frozen rank
+8. authenticated `/api/internal/commercial/upsert` for that test offer
+9. `/api/v1/offers/recommend` again and confirm the frozen rank/evaluation is unchanged while `commercialOffers` gains metadata
+10. `/api/v1/outbound/:offerId` and confirm only the stored HTTPS destination is used
+11. direct D1 check that neutral `merchant_offers.affiliate_url` remains NULL and cross-merchant attribution is rejected
+12. desktop/mobile visual review
 
 ## Rollout rule
 
-The manual diagnosis path may remain usable without D1. Server-sourced market evidence, merchant recommendation and monetized outbound paths must not be advertised as operational until the target D1 database, migrations, knowledge seed, both ingestion secrets and controlled merchant data have all been verified in the deployed environment.
+The manual diagnosis path may remain usable without D1. Server-sourced market evidence, merchant recommendation and monetized outbound paths must not be advertised as operational until the target D1 database, all migrations, knowledge seed, all three internal secrets and controlled merchant/commercial data have been verified in the deployed environment.
