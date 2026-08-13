@@ -11,7 +11,7 @@ CPU_DIR = ROOT / "knowledge" / "hardware" / "cpu"
 GPU_DIR = ROOT / "knowledge" / "hardware" / "gpu"
 SOURCE_DIR = ROOT / "knowledge" / "sources"
 GENERATOR = ROOT / "scripts" / "build_knowledge_seed.mjs"
-KNOWLEDGE_VERSION = "knowledge-2026-08-13.2"
+KNOWLEDGE_VERSION = json.loads((ROOT / "knowledge" / "version.json").read_text(encoding="utf-8"))["version"]
 
 STABLE_CPU_IDS = {
     "Intel Core i5-8365U": "intel-i5-8365u",
@@ -137,7 +137,6 @@ def main() -> None:
             if missing_cpu_evidence or missing_gpu_evidence:
                 raise RuntimeError(f"hardware rows without source evidence: cpu={missing_cpu_evidence}, gpu={missing_gpu_evidence}")
 
-            # The seed must be idempotent because deploy/refresh jobs may safely rerun it.
             con.executescript(seed_path.read_text(encoding="utf-8"))
             assert con.execute("SELECT COUNT(*) FROM hardware_cpu").fetchone()[0] == len(cpus)
             assert con.execute("SELECT COUNT(*) FROM hardware_gpu").fetchone()[0] == len(gpus)
