@@ -13,6 +13,28 @@ SOURCE_DIR = ROOT / "knowledge" / "sources"
 GENERATOR = ROOT / "scripts" / "build_knowledge_seed.mjs"
 KNOWLEDGE_VERSION = "knowledge-2026-08-13.2"
 
+STABLE_CPU_IDS = {
+    "Intel Core i5-8365U": "intel-i5-8365u",
+    "Intel Core i5-1135G7": "intel-i5-1135g7",
+    "Intel Core i5-1235U": "intel-i5-1235u",
+    "AMD Ryzen 5 5600U": "amd-r5-5600u",
+    "AMD Ryzen 5 5600H": "amd-r5-5600h",
+    "Intel Core i5-12400F": "intel-i5-12400f",
+    "AMD Ryzen 5 7600": "amd-r5-7600",
+    "AMD Ryzen 7 7800X3D": "amd-r7-7800x3d",
+}
+STABLE_GPU_IDS = {
+    "Intel UHD Graphics 620": "intel-uhd-620",
+    "Intel Iris Xe Graphics": "intel-iris-xe",
+    "GeForce GTX 1650 Laptop": "nvidia-gtx1650-laptop",
+    "GeForce RTX 3050 Laptop": "nvidia-rtx3050-laptop",
+    "GeForce RTX 3060 Laptop": "nvidia-rtx3060-laptop",
+    "GeForce RTX 4060 Laptop": "nvidia-rtx4060-laptop",
+    "GeForce RTX 5060 Laptop": "nvidia-rtx5060-laptop",
+    "GeForce RTX 3060": "nvidia-rtx3060-desktop",
+    "GeForce RTX 4060": "nvidia-rtx4060-desktop",
+}
+
 
 def load_catalog(directory: Path) -> list[dict]:
     entries: list[dict] = []
@@ -34,6 +56,17 @@ def count_sources() -> int:
             raise RuntimeError(f"source file must contain an array: {path}")
         count += len(payload)
     return count
+
+
+def assert_stable_ids(con: sqlite3.Connection) -> None:
+    for name, expected_id in STABLE_CPU_IDS.items():
+        row = con.execute("SELECT id FROM hardware_cpu WHERE canonical_name = ?", (name,)).fetchone()
+        if row is None or row[0] != expected_id:
+            raise RuntimeError(f"stable CPU id changed for {name}: {row} != {expected_id}")
+    for name, expected_id in STABLE_GPU_IDS.items():
+        row = con.execute("SELECT id FROM hardware_gpu WHERE canonical_name = ?", (name,)).fetchone()
+        if row is None or row[0] != expected_id:
+            raise RuntimeError(f"stable GPU id changed for {name}: {row} != {expected_id}")
 
 
 def main() -> None:
@@ -74,6 +107,7 @@ def main() -> None:
             assert source_count == expected_sources, (source_count, expected_sources)
             assert evidence_count >= len(cpus) + len(gpus), evidence_count
             assert version_count == 1, version_count
+            assert_stable_ids(con)
 
             missing_versions = con.execute(
                 """
@@ -107,13 +141,14 @@ def main() -> None:
             con.executescript(seed_path.read_text(encoding="utf-8"))
             assert con.execute("SELECT COUNT(*) FROM hardware_cpu").fetchone()[0] == len(cpus)
             assert con.execute("SELECT COUNT(*) FROM hardware_gpu").fetchone()[0] == len(gpus)
+            assert_stable_ids(con)
             assert not con.execute("PRAGMA foreign_key_check").fetchall()
         finally:
             con.close()
 
     print(
         f"Knowledge seed valid: {len(cpus)} CPUs, {len(gpus)} GPUs, "
-        f"{expected_sources} source documents; evidence present, foreign keys clean and rerun-safe."
+        f"{expected_sources} source documents; stable IDs/evidence/foreign keys clean and rerun-safe."
     )
 
 
