@@ -1,38 +1,41 @@
-# Implementation Status — Bootstrap Baseline
+# Implementation Status — v0.2 build
 
 Repository: `syouziroupc/choosePC`
 
-## Completed in this baseline
+## Implemented
 
-- integrated product/system blueprint
-- `NormalizedPC` and evaluation-result schemas
-- deterministic evaluation core skeleton
-- explicit gaming-laptop fields and routing requirement
-- monetization attachment separated from ranking
-- D1 initial schema
-- Worker health/evaluation endpoint skeleton
-- analytics/revenue model
-- GitHub Actions validation workflow
-- knowledge JSON validator
+- React/Vite public UI for purchase, replacement and sale workflows
+- URL inspection with supported-domain allowlist, bounded streaming and redirect revalidation
+- `NormalizedPC` model for laptops, gaming laptops, desktops, gaming desktops, BTO/custom, mini PC, workstation and Mac category
+- deterministic use-case requirement bands with essential gates
+- lower-is-better requirements for mobility such as weight
+- gaming resolution/FPS profiles and laptop-GPU TGP handling
+- hard constraints for known critical failures such as inadequate PSU
+- explicit warnings/confidence penalties for unknown gaming cooling, TGP and desktop power evidence
+- purchase vs ownership evidence contexts
+- observed-market vs user-estimate separation
+- sale logic that refuses to invent dealer buyback quotes
+- evaluative ranking isolated from affiliate/own-stock metadata
+- knowledge catalogs under `knowledge/` with provisional/verified status and source references
+- D1 schema extended with provenance, market-estimate, recommendation and commercial attribution tables
+- CI regression tests for the core decision-policy invariants
+- Cloudflare Worker/Vite config and manual deploy workflow
 
-## Deliberately not provisioned yet
+## Deliberate limitations before calibration
 
-- production Cloudflare bindings and D1 ID
-- Queue/R2 bindings
-- React/Vite UI
-- AI-provider credentials
-- affiliate IDs/merchant credentials
-- customer data
+- CPU/GPU capability indices are still `provisional`; they are internal relative indices, not copied benchmark scores.
+- Provisional evidence is confidence-capped and cannot produce an unconditional strong recommendation.
+- Live observed-market ingestion is not connected yet; user-entered comparison prices remain low-confidence reference input.
+- Merchant-specific product parsers are not yet complete.
+- D1 persistence is designed but not yet bound to the deployed Worker.
 
-## Immediate sequence
+## Next implementation sequence
 
-1. Make bootstrap CI green on GitHub.
-2. Generate and commit `package-lock.json` using Node 24.
-3. Add deterministic fixtures for general laptop, gaming laptop, desktop and gaming desktop.
-4. Implement manual `NormalizedPC -> EvaluationResult` API and result page.
-5. Create dev D1 and apply `migrations/0001_initial.sql`.
-6. Implement the secure URL-fetch boundary before arbitrary URL parsing is exposed.
-7. Add merchant parsers incrementally with fixtures/regression tests.
-8. Add offer ranking and freeze it before monetization resolution.
-9. Add 正二郎商事 consultation/buyback/repair leads and affiliate outbound tracking.
-10. Replace revenue assumptions with measured funnel data after launch.
+1. Make v0.2 CI green including Vite build and Wrangler dry-run.
+2. Add observed market ingestion/storage and robust price estimator.
+3. Add recommendation/search candidates and freeze rank before monetization.
+4. Add merchant adapters and URL parser fixtures.
+5. Add D1 persistence and analytics/revenue dashboard data path.
+6. Calibrate capability indices using licensed/reproducible benchmark evidence and promote entries from provisional to verified.
+7. Deploy and perform desktop/mobile visual smoke review.
+8. Add own-stock/affiliate outbound destinations only after ranking is stable.
