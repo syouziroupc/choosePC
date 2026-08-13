@@ -28,4 +28,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npx wrangler deploy --dry-run
+      - name: Wrangler deploy dry-run
+        env:
+          MARKET_INGEST_TOKEN: ci-dry-run-placeholder
+          OFFER_INGEST_TOKEN: ci-dry-run-placeholder
+          COMMERCIAL_ADMIN_TOKEN: ci-dry-run-placeholder
+          CONVERSION_IMPORT_TOKEN: ci-dry-run-placeholder
+        run: npx wrangler deploy --dry-run
