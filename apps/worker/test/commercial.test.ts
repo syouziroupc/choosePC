@@ -13,6 +13,7 @@ type Row = {
   program_status: string | null;
   destination_url: string | null;
   disclosure_text: string | null;
+  click_ref_param?: string | null;
 };
 
 function fakeDb(rows: Row[]) {
@@ -62,6 +63,7 @@ describe("commercial resolution", () => {
         program_status: "active",
         destination_url: "https://affiliate.example/b",
         disclosure_text: "広告リンクを含みます。",
+        click_ref_param: "subid",
       },
       {
         ...base,
@@ -95,7 +97,12 @@ describe("commercial resolution", () => {
       disclosureRequired: true,
     });
     const destination = await resolveOutboundDestination({ DB: db.DB as never }, "offer-1");
-    expect(destination).toMatchObject({ merchantType: "own", destinationUrl: "https://own.example/a" });
+    expect(destination).toMatchObject({
+      merchantType: "own",
+      destinationUrl: "https://own.example/a",
+      programId: "own-a",
+      clickRefParam: null,
+    });
   });
 
   it("falls back to the neutral product URL when no active program is usable", async () => {
@@ -107,6 +114,7 @@ describe("commercial resolution", () => {
       program_status: "paused",
       destination_url: "https://affiliate.example/paused",
       disclosure_text: "広告リンクを含みます。",
+      click_ref_param: "subid",
     }]);
     const destination = await resolveOutboundDestination({ DB: db.DB as never }, "offer-1");
     expect(destination).toEqual({
@@ -114,6 +122,8 @@ describe("commercial resolution", () => {
       merchant: "Example Shop",
       merchantType: "normal",
       destinationUrl: "https://shop.example/item",
+      programId: null,
+      clickRefParam: null,
     });
   });
 });
