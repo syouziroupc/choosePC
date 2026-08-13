@@ -5,6 +5,7 @@ type CatalogItem = { id: string; label: string; aliases: string[]; confidence: n
 type Catalog = { cpus: CatalogItem[]; gpus: CatalogItem[]; useCases: Array<{ id: string; name: string }> };
 type Workflow = "purchase" | "replacement" | "sale";
 type Mode = "url" | "manual";
+type StockState = "in_stock" | "low_stock" | "out_of_stock" | "sold" | "unavailable" | "unknown";
 type EvaluationResult = {
   scores: { hardware: number; fit: number; value: number; condition: number; longevity: number; risk: number; confidence: number; overall: number };
   decision: string;
@@ -15,7 +16,7 @@ type EvaluationResult = {
 };
 type ReplacementResult = { decision: "keep" | "upgrade" | "repair_or_inspect" | "replace" | "insufficient_data"; urgency: number; reasons: string[] };
 type SaleAssessment = { decision: "sellable" | "compare_quotes" | "repair_then_sell" | "recycle_or_parts" | "insufficient_data"; market?: { fairPriceJpy: number; lowPriceJpy?: number; highPriceJpy?: number; confidence: number }; reasons: string[] };
-type InspectResponse = { extraction: { sourceUrl: string; title: string | null; priceJpy: number | null; cpuRaw: string | null; gpuRaw: string | null; ramGb: number | null; storageGb: number | null; confidence: Record<string, number> }; error?: string };
+type InspectResponse = { extraction: { sourceUrl: string; merchant: string | null; parserName: string; parserVersion: string; stockState: StockState; title: string | null; priceJpy: number | null; cpuRaw: string | null; gpuRaw: string | null; ramGb: number | null; storageGb: number | null; confidence: Record<string, number> }; error?: string };
 type EvaluateResponse = { result: EvaluationResult; error?: string };
 type ReplacementResponse = { evaluation: EvaluationResult; replacement: ReplacementResult; error?: string };
 type SaleResponse = { sale: SaleAssessment; error?: string };
@@ -35,7 +36,7 @@ type FormState = {
   refreshHz: string;
   price: string;
   fairPrice: string;
-  condition: "new" | "used" | "refurbished";
+  condition: "new" | "used" | "refurbished" | "unknown";
   grade: "S" | "A" | "B" | "C" | "D" | "unknown";
   batteryHealth: string;
   warrantyDays: string;
@@ -47,22 +48,22 @@ type FormState = {
 const initialForm: FormState = {
   category: "general_laptop",
   useCase: "office",
-  cpu: "Intel Core i5-8365U",
-  gpu: "Intel UHD Graphics 620",
-  cpuConfidence: 95,
-  gpuConfidence: 95,
+  cpu: "",
+  gpu: "",
+  cpuConfidence: 0,
+  gpuConfidence: 0,
   gpuTgp: "",
   vram: "",
-  ram: "8",
-  storage: "256",
-  refreshHz: "60",
-  price: "29800",
-  fairPrice: "28000",
-  condition: "used",
-  grade: "B",
-  batteryHealth: "75",
-  warrantyDays: "90",
-  weightKg: "0.999",
+  ram: "",
+  storage: "",
+  refreshHz: "",
+  price: "",
+  fairPrice: "",
+  condition: "unknown",
+  grade: "unknown",
+  batteryHealth: "",
+  warrantyDays: "",
+  weightKg: "",
   gamingResolution: "1080p",
   targetFps: "60",
 };
@@ -102,6 +103,14 @@ function gpuVariant(category: string, gpu: string): "desktop" | "laptop" | "inte
   return "desktop";
 }
 
+function stockMessage(stockState: StockState): string {
+  if (stockState === "sold") return "売却済み表示を検出しました。購入候補として扱う前に販売状態を確認してください。";
+  if (stockState === "out_of_stock") return "在庫切れ表示を検出しました。現在購入できるか確認してください。";
+  if (stockState === "unavailable") return "販売終了・取扱終了の可能性があります。販売状態を確認してください。";
+  if (stockState === "low_stock") return "在庫僅少表示を検出しました。";
+  return "";
+}
+
 export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
@@ -130,6 +139,9 @@ export default function App() {
   const isGaming = form.category.includes("gaming") || form.useCase === "gaming";
   const positives = useMemo(() => result?.reasonDetails.filter((x) => x.kind === "positive").slice(0, 4) ?? [], [result]);
   const concerns = useMemo(() => result?.reasonDetails.filter((x) => x.kind === "warning" || x.kind === "critical").slice(0, 5) ?? [], [result]);
+  const hasOutput = Boolean(result || sale);
+  const showOffers = workflow === "purchase" && Boolean(result) && !replacement;
+  const principleStep = !hasOutput ? "02" : showOffers ? "04" : "03";
 
   function patch<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -163,17 +175,33 @@ export default function App() {
       const extraction = data.extraction;
       setForm((previous) => ({
         ...previous,
-        cpu: extraction.cpuRaw ?? previous.cpu,
-        gpu: extraction.gpuRaw ?? previous.gpu,
-        cpuConfidence: extraction.cpuRaw ? (extraction.confidence.cpu ?? 70) : previous.cpuConfidence,
-        gpuConfidence: extraction.gpuRaw ? (extraction.confidence.gpu ?? 70) : previous.gpuConfidence,
-        ram: extraction.ramGb ? String(extraction.ramGb) : previous.ram,
-        storage: extraction.storageGb ? String(extraction.storageGb) : previous.storage,
-        price: extraction.priceJpy ? String(extraction.priceJpy) : previous.price,
+        cpu: extraction.cpuRaw ?? "",
+        gpu: extraction.gpuRaw ?? "",
+        cpuConfidence: extraction.cpuRaw ? (extraction.confidence.cpu ?? 0) : 0,
+        gpuConfidence: extraction.gpuRaw ? (extraction.confidence.gpu ?? 0) : 0,
+        ram: extraction.ramGb != null ? String(extraction.ramGb) : "",
+        storage: extraction.storageGb != null ? String(extraction.storageGb) : "",
+        price: extraction.priceJpy != null ? String(extraction.priceJpy) : "",
+        fairPrice: "",
+        condition: "unknown",
+        grade: "unknown",
+        batteryHealth: "",
+        warrantyDays: "",
+        weightKg: "",
       }));
       setMode("manual");
-      track("url_inspect_success", { has_cpu: Boolean(extraction.cpuRaw), has_gpu: Boolean(extraction.gpuRaw), has_price: Boolean(extraction.priceJpy) });
-      setNotice(`商品情報を読み取りました${extraction.title ? `：${extraction.title}` : ""}。不足項目を確認してください。`);
+      track("url_inspect_success", {
+        merchant: extraction.merchant ?? "unknown",
+        parser: extraction.parserName,
+        stock: extraction.stockState,
+        has_cpu: Boolean(extraction.cpuRaw),
+        has_gpu: Boolean(extraction.gpuRaw),
+        has_price: Boolean(extraction.priceJpy),
+      });
+      const merchant = extraction.merchant ? `（${extraction.merchant}）` : "";
+      const title = extraction.title ? `：${extraction.title}` : "";
+      const stock = stockMessage(extraction.stockState);
+      setNotice(`商品情報を読み取りました${merchant}${title}。不足項目を確認してください。${stock ? ` ${stock}` : ""}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "URL_INSPECTION_FAILED";
       track("url_inspect_failure", { reason: message });
@@ -192,16 +220,16 @@ export default function App() {
       const storage = numberOrNull(form.storage);
       const pc = {
         category: form.category,
-        cpu: { raw: form.cpu || null, confidence: form.cpuConfidence },
+        cpu: form.cpu ? { raw: form.cpu, confidence: form.cpuConfidence } : null,
         gpu: form.gpu ? { raw: form.gpu, variant: gpuVariant(form.category, form.gpu), tgpW: numberOrNull(form.gpuTgp), vramGb: numberOrNull(form.vram), confidence: form.gpuConfidence } : null,
         memory: { sizeGb: numberOrNull(form.ram), upgradeable: null },
-        storage: storage ? [{ kind: "nvme_ssd", sizeGb: storage }] : [],
+        storage: storage ? [{ kind: "unknown", sizeGb: storage }] : [],
         display: { refreshHz: numberOrNull(form.refreshHz) },
         mobility: { weightKg: numberOrNull(form.weightKg) },
         condition: { type: form.condition, grade: form.grade, batteryHealthPct: numberOrNull(form.batteryHealth), defects: [] },
         commerce: { priceJpy: numberOrNull(form.price), warrantyDays: numberOrNull(form.warrantyDays), sourceUrl: url || null },
         confidence: {},
-        extra: { coolingScore: null, upgradeabilityScore: form.category.includes("desktop") ? 82 : 55 },
+        extra: { coolingScore: null, upgradeabilityScore: null },
       };
       const fair = numberOrNull(form.fairPrice);
       const market = fair && fair > 0 ? { fairPriceJpy: fair, source: "user_estimate" as const, sampleCount: 1, confidence: 40, ageDays: 0 } : null;
@@ -264,7 +292,7 @@ export default function App() {
           {mode === "url" && workflow === "purchase" && <div className="url-panel">
             <label htmlFor="product-url">商品ページURL</label>
             <div className="url-row"><input id="product-url" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://..." /><button className="primary" disabled={busy || !url.trim()} onClick={inspectUrl}>{busy ? "解析中…" : "URLを読む"}</button></div>
-            <p className="support-note">主要EC・PCショップから段階的に対応。未対応URLは手入力へ切り替えられます。</p>
+            <p className="support-note">Amazon・楽天・Yahoo!ショッピング・メルカリ・主要PCメーカー/BTOショップに対応。取れない項目は空欄のまま確認できます。</p>
           </div>}
           {notice && <p className="notice" role="status">{notice}</p>}
 
@@ -272,8 +300,8 @@ export default function App() {
             <div className="form-grid">
               <label>PCの種類<select value={form.category} onChange={(event) => patch("category", event.target.value)}><option value="general_laptop">一般ノート</option><option value="mobile_laptop">モバイルノート</option><option value="gaming_laptop">ゲーミングノート</option><option value="general_desktop">一般デスクトップ</option><option value="gaming_desktop">ゲーミングデスクトップ</option><option value="bto_desktop">BTOデスクトップ</option><option value="custom_desktop">自作PC</option><option value="mini_pc">ミニPC</option><option value="workstation">ワークステーション</option></select></label>
               <label>主な用途<select value={form.useCase} onChange={(event) => patch("useCase", event.target.value)}>{(catalog?.useCases ?? [{ id: "office", name: "事務・Web" }, { id: "student", name: "大学・学校" }, { id: "programming", name: "プログラミング" }, { id: "gaming", name: "PCゲーム" }, { id: "video_editing", name: "動画編集" }, { id: "creative", name: "写真・デザイン" }, { id: "cad_3d", name: "CAD・3D" }, { id: "local_ai", name: "ローカル生成AI" }]).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-              <label>CPU<input list="cpu-list" value={form.cpu} onChange={(event) => setForm((previous) => ({ ...previous, cpu: event.target.value, cpuConfidence: 95 }))} placeholder="Core i5-1235U" /></label>
-              <label>GPU<input list="gpu-list" value={form.gpu} onChange={(event) => setForm((previous) => ({ ...previous, gpu: event.target.value, gpuConfidence: 95 }))} placeholder="RTX 4060 Laptop" /></label>
+              <label>CPU<input list="cpu-list" value={form.cpu} onChange={(event) => setForm((previous) => ({ ...previous, cpu: event.target.value, cpuConfidence: event.target.value ? 95 : 0 }))} placeholder="Core i5-1235U" /></label>
+              <label>GPU<input list="gpu-list" value={form.gpu} onChange={(event) => setForm((previous) => ({ ...previous, gpu: event.target.value, gpuConfidence: event.target.value ? 95 : 0 }))} placeholder="RTX 4060 Laptop" /></label>
               <datalist id="cpu-list">{catalog?.cpus.map((item) => <option key={item.id} value={item.label} />)}</datalist>
               <datalist id="gpu-list">{catalog?.gpus.map((item) => <option key={item.id} value={item.label} />)}</datalist>
               <NumberField label="メモリ" value={form.ram} unit="GB" min="1" onChange={(value) => patch("ram", value)} />
@@ -283,8 +311,8 @@ export default function App() {
             </div>
             <button type="button" className="advanced-toggle" onClick={() => setAdvanced((value) => !value)}>{advanced ? "詳細項目を閉じる" : "詳細項目を追加"}</button>
             {advanced && <div className="form-grid advanced-fields">
-              <label>状態<select value={form.condition} onChange={(event) => patch("condition", event.target.value as FormState["condition"])}><option value="new">新品</option><option value="refurbished">整備済み</option><option value="used">中古</option></select></label>
-              <label>外観ランク<select value={form.grade} onChange={(event) => patch("grade", event.target.value as FormState["grade"])}><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option><option value="unknown">不明</option></select></label>
+              <label>状態<select value={form.condition} onChange={(event) => patch("condition", event.target.value as FormState["condition"])}><option value="unknown">不明</option><option value="new">新品</option><option value="refurbished">整備済み</option><option value="used">中古</option></select></label>
+              <label>外観ランク<select value={form.grade} onChange={(event) => patch("grade", event.target.value as FormState["grade"])}><option value="unknown">不明</option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
               <NumberField label="保証" value={form.warrantyDays} unit="日" min="0" onChange={(value) => patch("warrantyDays", value)} />
               <NumberField label="バッテリー健康度" value={form.batteryHealth} unit="%" min="0" max="100" onChange={(value) => patch("batteryHealth", value)} />
               <NumberField label="重量" value={form.weightKg} unit="kg" min="0.1" step="0.01" onChange={(value) => patch("weightKg", value)} />
@@ -299,10 +327,10 @@ export default function App() {
         {result && !replacement && <PurchaseResult result={result} positives={positives} concerns={concerns} />}
         {replacement && result && <ReplacementView result={result} replacement={replacement} />}
         {sale && <SaleView sale={sale} />}
-        {workflow === "purchase" && result && !replacement && <OfferRecommendations category={form.category} useCase={form.useCase} initialMaxPriceJpy={numberOrNull(form.price)} gaming={form.useCase === "gaming" ? { resolution: form.gamingResolution, targetFps: Number(form.targetFps) as 60 | 120 | 144 | 240 } : undefined} />}
+        {showOffers && result && <OfferRecommendations category={form.category} useCase={form.useCase} initialMaxPriceJpy={numberOrNull(form.price)} gaming={form.useCase === "gaming" ? { resolution: form.gamingResolution, targetFps: Number(form.targetFps) as 60 | 120 | 144 | 240 } : undefined} />}
 
         <section id="principle" className="principle">
-          <SectionHeading step={workflow === "purchase" && result && !replacement ? "04" : "03"} title="判定の考え方" text="高性能だから買い、安いから買い、という平均点方式にはしません。" />
+          <SectionHeading step={principleStep} title="判定の考え方" text="高性能だから買い、安いから買い、という平均点方式にはしません。" />
           <ol className="principle-list"><li><strong>用途の必須条件</strong><span>必要性能を満たさないPCは安くても推奨しません。</span></li><li><strong>重大リスク</strong><span>電源不足などは平均点で打ち消しません。</span></li><li><strong>価格</strong><span>使えるPCでも高ければ「割高」と分離します。</span></li><li><strong>根拠の確かさ</strong><span>CPU・GPU・相場が不明なら情報不足と返します。</span></li></ol>
         </section>
       </main>
