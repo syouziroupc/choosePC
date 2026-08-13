@@ -69,6 +69,8 @@ export function resolveHardware(
   const adjustedGpu = gpu ? adjustGpuByTgp(gpu, gpuTgpW) : null;
 
   return {
+    cpuId: cpu?.id ?? null,
+    gpuId: gpu?.id ?? null,
     cpu: cpu?.capabilities ?? null,
     gpu: adjustedGpu?.capabilities ?? null,
     cpuConfidence: cpu ? capByExtraction(cpu.confidence, extraction?.cpuConfidence) : 0,
