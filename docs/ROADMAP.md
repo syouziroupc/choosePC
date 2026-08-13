@@ -14,7 +14,7 @@ Secure fetch boundary, JSON-LD/OpenGraph/generic parser, supported-domain allowl
 
 ## v0.3 — offer search and monetization
 
-Robust market estimator, trusted-vs-user evidence boundary, neutral D1 offer candidate loader, server-sourced offer ranking, frozen-rank commercial resolver and outbound attribution. **Backend path is implemented.** Remaining work is live trusted observation ingestion, live merchant-offer synchronization, D1 deployment binding and public offer UI.
+Robust market estimator, trusted-vs-user evidence boundary, neutral offer ingestion/search, server-sourced ranking, frozen-rank commercial administration/resolution, outbound attribution, commercial disclosure and public ranked-offer UI. **Core end-to-end application path is implemented and interactively visually validated.** Remaining work is live observation/offer collection, real D1 deployment, conversion ingestion and production data.
 
 ## v0.4 — own sales
 
@@ -34,12 +34,12 @@ Game profiles, gaming-laptop TGP/cooling/display depth and verified benchmark ob
 
 ## v0.8 — market refresh
 
-Trusted scheduled observations, Queue/Workflow refresh pipeline, outlier handling and freshness metrics. Robust estimation and authenticated ingestion boundary exist; automated collection/scheduling remains.
+Trusted scheduled observations, stale-offer maintenance, Queue/Workflow refresh pipeline, outlier handling and freshness metrics. Robust estimation and authenticated ingestion boundaries exist; automated collection/scheduling remains.
 
 ## v0.9 — revenue/quality dashboard
 
-Funnel, category contribution, parser failures, outbound attribution, conversion imports and scoring regressions. Event/persistence schema exists; dashboard/query layer remains.
+Funnel, category contribution, parser failures, outbound attribution, conversion imports and scoring regressions. Event/click/conversion persistence schema exists; aggregation/query/import layer remains.
 
 ## v1.0 — integrated launch
 
-Purchase / replace / sell integrated with reliable fallbacks, server-sourced offers, production D1, commercial disclosure, operational documentation and verified desktop/mobile visual checks.
+Purchase / replace / sell integrated with reliable fallbacks, server-sourced offers, production D1, commercial disclosure, operational documentation, conversion/revenue monitoring and verified desktop/mobile visual checks.
