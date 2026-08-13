@@ -2,6 +2,7 @@ import intelMobileCpuData from "../../../knowledge/hardware/cpu/intel-mobile.jso
 import intelDesktopCpuData from "../../../knowledge/hardware/cpu/intel-desktop.json";
 import intelCoreUltraCpuData from "../../../knowledge/hardware/cpu/intel-core-ultra.json";
 import intelLegacyCpuData from "../../../knowledge/hardware/cpu/intel-legacy-4th-7th.json";
+import intelLowPowerCpuData from "../../../knowledge/hardware/cpu/intel-low-power.json";
 import workstationCpuData from "../../../knowledge/hardware/cpu/workstation.json";
 import amdMobileCpuData from "../../../knowledge/hardware/cpu/amd-mobile.json";
 import amdDesktopCpuData from "../../../knowledge/hardware/cpu/amd-desktop.json";
@@ -59,6 +60,7 @@ function withStableIds<T>(entries: readonly HardwareCatalogEntry<T>[]): Hardware
 
 export const CPU_CATALOG: HardwareCatalogEntry<CpuCapabilities>[] = withStableIds([
   ...intelLegacyCpuData,
+  ...intelLowPowerCpuData,
   ...intelMobileCpuData,
   ...intelDesktopCpuData,
   ...intelCoreUltraCpuData,
