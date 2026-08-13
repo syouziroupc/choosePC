@@ -5,6 +5,12 @@ import {
   resolveOutboundDestination,
 } from "./commercial";
 import {
+  loadCollectorSources,
+  runDueCollectors,
+  upsertCollectorSource,
+  validCollectorSourceInput,
+} from "./collector";
+import {
   upsertConversion,
   type ConversionInput,
   type ConversionStatus,
@@ -209,6 +215,37 @@ async function handleRevenueMetrics(request: Request, env: Env, url: URL): Promi
   return json({ metrics });
 }
 
+async function handleCollectorSource(request: Request, env: Env): Promise<Response> {
+  if (!await authorized(request, env.OFFER_INGEST_TOKEN)) return json({ error: "NOT_FOUND" }, 404);
+  if (!env.DB) return json({ error: "COLLECTOR_DB_UNAVAILABLE" }, 503);
+  const body = await readJson<{ source?: unknown }>(request);
+  if (!validCollectorSourceInput(body.source)) return json({ error: "INVALID_COLLECTOR_SOURCE" }, 400);
+  const source = await upsertCollectorSource(env, body.source);
+  return json({ source }, 201);
+}
+
+async function handleCollectorStatus(request: Request, env: Env): Promise<Response> {
+  if (!await authorized(request, env.OFFER_INGEST_TOKEN)) return json({ error: "NOT_FOUND" }, 404);
+  if (!env.DB) return json({ error: "COLLECTOR_DB_UNAVAILABLE" }, 503);
+  const sources = await loadCollectorSources(env);
+  return json({ generatedAt: new Date().toISOString(), sources });
+}
+
+async function handleCollectorRun(request: Request, env: Env): Promise<Response> {
+  if (!await authorized(request, env.OFFER_INGEST_TOKEN)) return json({ error: "NOT_FOUND" }, 404);
+  if (!env.DB) return json({ error: "COLLECTOR_DB_UNAVAILABLE" }, 503);
+  const body = await readJson<{ force?: unknown; limit?: unknown }>(request);
+  if (body.force != null && typeof body.force !== "boolean") return json({ error: "INVALID_COLLECTOR_RUN" }, 400);
+  if (body.limit != null && (!Number.isInteger(body.limit) || Number(body.limit) < 1 || Number(body.limit) > 20)) {
+    return json({ error: "INVALID_COLLECTOR_RUN" }, 400);
+  }
+  const result = await runDueCollectors(env, {
+    force: body.force === true,
+    limit: typeof body.limit === "number" ? body.limit : undefined,
+  });
+  return json({ result });
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -217,11 +254,19 @@ export default {
 
     const isConversionImport = url.pathname === "/api/internal/conversions/upsert" && request.method === "POST";
     const isRevenueMetrics = url.pathname === "/api/internal/metrics/revenue" && request.method === "GET";
-    if (!isConversionImport && !isRevenueMetrics) return app.fetch(request, env, ctx);
+    const isCollectorSource = url.pathname === "/api/internal/collectors/source" && request.method === "POST";
+    const isCollectorStatus = url.pathname === "/api/internal/collectors/status" && request.method === "GET";
+    const isCollectorRun = url.pathname === "/api/internal/collectors/run" && request.method === "POST";
+    if (!isConversionImport && !isRevenueMetrics && !isCollectorSource && !isCollectorStatus && !isCollectorRun) {
+      return app.fetch(request, env, ctx);
+    }
 
     try {
       if (isConversionImport) return await handleConversionImport(request, env);
-      return await handleRevenueMetrics(request, env, url);
+      if (isRevenueMetrics) return await handleRevenueMetrics(request, env, url);
+      if (isCollectorSource) return await handleCollectorSource(request, env);
+      if (isCollectorStatus) return await handleCollectorStatus(request, env);
+      return await handleCollectorRun(request, env);
     } catch (error) {
       if (error instanceof SyntaxError) return json({ error: "INVALID_JSON" }, 400);
       const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
@@ -229,7 +274,12 @@ export default {
         return json({ error: message }, 400);
       }
       if (message === "CONVERSION_CLICK_NOT_FOUND") return json({ error: message }, 404);
-      if (message === "CONVERSION_DB_UNAVAILABLE") return json({ error: message }, 503);
+      if (["CONVERSION_DB_UNAVAILABLE", "COLLECTOR_DB_UNAVAILABLE"].includes(message)) return json({ error: message }, 503);
+      if ([
+        "INVALID_COLLECTOR_SOURCE",
+        "COLLECTOR_URL_INVALID",
+        "COLLECTOR_DOMAIN_NOT_SUPPORTED",
+      ].includes(message)) return json({ error: message }, 400);
       console.error(JSON.stringify({
         event: "production_route_error",
         path: url.pathname,
@@ -237,5 +287,12 @@ export default {
       }));
       return json({ error: "INTERNAL_ERROR" }, 500);
     }
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil((async () => {
+      const result = await runDueCollectors(env);
+      console.log(JSON.stringify({ event: "collector_cron_complete", ...result, at: new Date().toISOString() }));
+    })());
   },
 } satisfies ExportedHandler<Env>;
