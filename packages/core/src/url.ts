@@ -63,8 +63,42 @@ function extractJsonLdObjects(html: string): JsonLdObject[] {
   return objects;
 }
 
-function productJsonLd(html: string): JsonLdObject | null {
-  return extractJsonLdObjects(html).find((object) => typeIncludes(object["@type"], "Product")) ?? null;
+function normalizeComparableText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[®™]/g, "")
+    .replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function titleAffinity(productName: string | null, pageTitle: string | null): number {
+  if (!productName || !pageTitle) return 0;
+  const product = normalizeComparableText(productName);
+  const page = normalizeComparableText(pageTitle);
+  if (!product || !page) return 0;
+  if (page.includes(product) || product.includes(page)) return 12;
+
+  const productTokens = new Set(product.split(" ").filter((token) => token.length >= 2));
+  const pageTokens = new Set(page.split(" ").filter((token) => token.length >= 2));
+  if (!productTokens.size || !pageTokens.size) return 0;
+  let overlap = 0;
+  for (const token of productTokens) if (pageTokens.has(token)) overlap += 1;
+  return (overlap / Math.min(productTokens.size, pageTokens.size)) * 8;
+}
+
+function sameProductUrl(candidate: unknown, sourceUrl: string): boolean {
+  const raw = asString(candidate);
+  if (!raw) return false;
+  try {
+    const candidateUrl = new URL(raw, sourceUrl);
+    const source = new URL(sourceUrl);
+    const normalizePath = (pathname: string) => pathname.replace(/\/+$/, "") || "/";
+    return candidateUrl.hostname.toLowerCase() === source.hostname.toLowerCase()
+      && normalizePath(candidateUrl.pathname) === normalizePath(source.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function brandFromProduct(product: JsonLdObject | null): string | null {
@@ -109,6 +143,29 @@ function detectCatalogLabel(text: string, type: "cpu" | "gpu"): string | null {
   return matches[0].label;
 }
 
+function productRelevance(product: JsonLdObject, sourceUrl: string, pageTitle: string | null): number {
+  const name = asString(product.name);
+  const description = asString(product.description);
+  const identityText = [name, description].filter(Boolean).join(" ");
+  let score = titleAffinity(name, pageTitle);
+  if (sameProductUrl(product.url, sourceUrl)) score += 20;
+  if (priceFromOffer(product.offers) != null) score += 5;
+  if (modelFromProduct(product)) score += 3;
+  if (brandFromProduct(product)) score += 2;
+  if (description) score += 1;
+  if (detectCatalogLabel(identityText, "cpu")) score += 3;
+  if (detectCatalogLabel(identityText, "gpu")) score += 3;
+  return score;
+}
+
+function productJsonLd(html: string, sourceUrl: string, pageTitle: string | null): JsonLdObject | null {
+  const products = extractJsonLdObjects(html).filter((object) => typeIncludes(object["@type"], "Product"));
+  if (products.length <= 1) return products[0] ?? null;
+  return products
+    .map((product, index) => ({ product, index, score: productRelevance(product, sourceUrl, pageTitle) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.product ?? null;
+}
+
 function parseMemory(text: string): number | null {
   const patterns = [
     /(\d{1,4})\s*gb\s*(?:ram|memory|メモリ)/gi,
@@ -148,13 +205,14 @@ function stripMarkup(html: string, maxLength = 120_000): string {
 }
 
 export function extractProductPage(html: string, sourceUrl: string): ProductPageExtraction {
-  const product = productJsonLd(html);
   const titleMeta = textFromMeta(html, ["og:title", "twitter:title"]);
   const titleTag = html.match(/<title[^>]*>([\s\S]{1,300}?)<\/title>/i)?.[1];
+  const pageTitle = titleMeta ?? (titleTag ? unescapeHtml(titleTag.replace(/<[^>]+>/g, " ").trim()) : null);
+  const product = productJsonLd(html, sourceUrl, pageTitle);
   const metaDescription = textFromMeta(html, ["og:description", "description"]);
   const structuredTitle = asString(product?.name);
   const structuredDescription = asString(product?.description);
-  const title = (structuredTitle ?? titleMeta ?? (titleTag ? unescapeHtml(titleTag.replace(/<[^>]+>/g, " ").trim()) : null))?.slice(0, 240) ?? null;
+  const title = (structuredTitle ?? pageTitle)?.slice(0, 240) ?? null;
   const description = (structuredDescription ?? metaDescription)?.slice(0, 1000) ?? null;
   const manufacturer = brandFromProduct(product);
   const model = modelFromProduct(product);
