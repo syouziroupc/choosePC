@@ -27,19 +27,25 @@ Repository: `syouziroupc/choosePC`
 - server-sourced `/offers/recommend` path: neutral offer load -> trusted market enrichment -> frozen rank -> commercial metadata attachment
 - public purchase-result UI for server-ranked offers with editable price ceiling, no-result fallback, rank/price/fit/value/confidence display and outbound actions
 - explicit UI labels for own stock, affiliate links and normal links; monetized offers render disclosure text without changing the frozen ranking
-- protected post-ranking commercial administration with a third authority token, mandatory disclosure for active monetized programs and merchant/offer matching
+- protected post-ranking commercial administration with a distinct authority token, mandatory disclosure for active monetized programs and merchant/offer matching
+- optional per-program `clickRefParam` for affiliate/merchant sub-ID attribution, validated separately from neutral ranking data
 - D1 commercial-integrity migration enforcing unique offer/program pairs, merchant-match triggers and attribution cleanup on offer deletion
 - deterministic post-ranking commercial resolver; cross-merchant programs are ineligible and database row order cannot change the selected destination
 - DB-resolved HTTPS outbound redirect path with click attribution and no client-controlled destination URL
+- outbound click is persisted before its click reference is appended; a failed persistence write cannot emit an orphan attribution ID
+- protected conversion-import route with stable provider/reference IDs, explicit unattributed conversions and rejection of unknown click IDs
+- conversion attribution copies persisted click program/offer identity instead of guessing from client data
+- operator-only revenue/funnel aggregation for observed clicks, conversions, approved/pending commission, order value, merchant types and top programs
 - optional D1 persistence wired into evaluation, replacement, recommendation and analytics API paths
 - persistence/commercial lookup failures are non-fatal to core manual diagnosis
 - knowledge catalogs under `knowledge/` with provisional/verified status and source references
 - reproducible D1 hardware-knowledge seed generator with source/evidence rows, foreign-key validation and idempotency check in CI
 - D1 schema with provenance, market observation/estimate, recommendation, offer, commercial attribution, lead and conversion tables
-- CI regression guards for decision-policy invariants, market provenance, robust market estimation, neutral offer ingestion/query fields, commercial administration/integrity and monetization separation
+- CI regression guards for decision-policy invariants, market provenance, robust market estimation, neutral offer ingestion/query fields, commercial administration/integrity, attribution/conversion accounting and monetization separation
 - automated interactive visual smoke workflow covering initial UI, purchase diagnosis, D1-empty offer state and three mocked commercial offer types at desktop and 390px mobile widths
 - interactive visual diagnostics reject horizontal overflow and verify rendered offer/disclosure counts
-- Cloudflare Worker/Vite config and manual deploy workflow
+- Cloudflare Worker/Vite config uses the production entry that exposes outbound attribution, conversion import and revenue metrics
+- committed `package-lock.json`; CI, visual smoke and deployment workflows install the exact lock with `npm ci`
 
 ## Deliberate limitations before launch
 
@@ -52,19 +58,18 @@ Repository: `syouziroupc/choosePC`
 - Knowledge seed generation/validation is implemented, but the seed has not yet been applied to a real remote D1 database.
 - Market observations therefore continue to retain resolved CPU/GPU IDs in evidence metadata rather than relying on remote hardware foreign keys until that deployment step is verified.
 - The public offer UI is implemented and visually validated with deterministic mock data, but real server-sourced offers cannot appear until D1 and ingestion are deployed.
-- There is no operator-facing UI for commercial administration; the authenticated API is the current management boundary.
-- Conversion imports and the revenue/quality dashboard are schema/design only.
-- `package-lock.json` is still generated and uploaded by CI rather than committed to the branch.
+- There is no operator-facing UI for commercial administration or revenue metrics; authenticated internal APIs are the current management boundary.
+- Conversion import and revenue aggregation are implemented and locally regression-tested, but they have not yet been exercised against a real remote D1 database or live affiliate/merchant callback/export data.
 
 ## Next implementation sequence
 
-1. Add server-side funnel/revenue-quality aggregation and conversion-import boundaries while they can still be validated locally against SQLite/D1 schema.
-2. Add stale-offer maintenance and collector-friendly ingestion status so live feeds cannot leave old listings indefinitely active.
-3. Build merchant-specific parser fixtures/adapters for priority retailers and trusted retailer/marketplace observation collectors.
-4. Provision a development D1 database in the target Cloudflare account, bind it as `DB`, configure distinct `MARKET_INGEST_TOKEN`, `OFFER_INGEST_TOKEN` and `COMMERCIAL_ADMIN_TOKEN` secrets, and apply all migrations.
-5. Apply the generated versioned hardware-knowledge seed to D1 and verify foreign keys/triggers remotely.
-6. Connect merchant feed/crawler synchronization to `/api/internal/offers/upsert` and trusted market collectors to `/api/internal/market/observe`.
-7. Calibrate capability indices using licensed/reproducible benchmark evidence and promote entries from provisional to verified.
-8. Commit the generated dependency lock and deploy a development environment.
-9. Run real D1 end-to-end tests: neutral offer ingestion -> frozen rank -> commercial attachment -> outbound click -> conversion import.
-10. Perform final interactive desktop/mobile validation on the deployed environment before moving the PR out of draft.
+1. Add stale-offer maintenance and collector-friendly ingestion status so live feeds cannot leave old listings indefinitely active.
+2. Build merchant-specific parser fixtures/adapters for priority retailers and trusted retailer/marketplace observation collectors.
+3. Provision a development D1 database in the target Cloudflare account, bind it as `DB`, configure distinct `MARKET_INGEST_TOKEN`, `OFFER_INGEST_TOKEN`, `COMMERCIAL_ADMIN_TOKEN` and `CONVERSION_IMPORT_TOKEN` secrets, and apply all migrations.
+4. Apply the generated versioned hardware-knowledge seed to D1 and verify foreign keys/triggers remotely.
+5. Connect merchant feed/crawler synchronization to `/api/internal/offers/upsert` and trusted market collectors to `/api/internal/market/observe`.
+6. Calibrate capability indices using licensed/reproducible benchmark evidence and promote entries from provisional to verified.
+7. Deploy a development environment with the committed dependency lock.
+8. Run real D1 end-to-end tests: neutral offer ingestion -> frozen rank -> commercial attachment -> outbound click -> conversion import -> revenue metrics.
+9. Perform final interactive desktop/mobile validation on the deployed environment.
+10. Move the PR out of draft only after the remote D1 and deployed-environment gates pass.
