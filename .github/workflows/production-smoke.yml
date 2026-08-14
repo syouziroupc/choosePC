@@ -12,28 +12,23 @@ permissions:
 jobs:
   verify-production:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     env:
       BASE_URL: https://choosepc.syouziroupc.workers.dev
     steps:
-      - name: Inspect production route
+      - name: Wait for choosePC production
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== HOME HEADERS ==='
-          curl --silent --show-error --location --max-time 15 -D - -o /tmp/home.html -H 'Cache-Control: no-cache' "$BASE_URL/?diagnostic=${GITHUB_SHA}" || true
-          echo '=== HOME BODY ==='
-          head -c 3000 /tmp/home.html || true
-          echo
-          echo '=== HEALTH HEADERS ==='
-          curl --silent --show-error --location --max-time 15 -D - -o /tmp/health.txt -H 'Cache-Control: no-cache' "$BASE_URL/api/v1/health?diagnostic=${GITHUB_SHA}" || true
-          echo '=== HEALTH BODY ==='
-          head -c 3000 /tmp/health.txt || true
-          echo
-
-      - name: Verify current choosePC production
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -q 'PC ASSIST' /tmp/home.html
-          grep -q '"service":"choosePC"' /tmp/health.txt
+          for attempt in $(seq 1 48); do
+            html="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/?smoke=${GITHUB_SHA}" || true)"
+            health="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/api/v1/health?smoke=${GITHUB_SHA}" || true)"
+            if printf '%s' "$html" | grep -q 'PC ASSIST' && printf '%s' "$health" | grep -q '"service":"choosePC"'; then
+              printf 'Production route verified on attempt %s.\n' "$attempt"
+              printf 'HEALTH=%s\n' "$health"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Production route did not serve choosePC within the verification window.'
+          exit 1
