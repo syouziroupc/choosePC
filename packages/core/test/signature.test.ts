@@ -53,4 +53,23 @@ describe("product signatures", () => {
     expect(signature.key).toContain("amd-r5-7600");
     expect(signature.key).toContain("nvidia-rtx4060-desktop");
   });
+
+  it("does not treat two information-poor signatures as a perfect match", () => {
+    const a = pc({ manufacturer: null, model: null, cpu: null, gpu: null, memory: null, storage: [] });
+    const b = pc({ manufacturer: null, model: null, cpu: null, gpu: null, memory: null, storage: [] });
+    const sa = createProductSignature(a, resolveHardware(null, null));
+    const sb = { ...createProductSignature(b, resolveHardware(null, null)), key: "different-partial-key" };
+    expect(signatureSimilarity(sa, sb)).toBeLessThan(0.55);
+  });
+
+  it("matches nearby performance tiers without pretending they are identical", () => {
+    const a = pc({ manufacturer: null, model: null, cpu: { raw: "Intel Core i5-1235U", confidence: 95 } });
+    const b = pc({ manufacturer: null, model: null, cpu: { raw: "Intel Core i5-1335U", confidence: 95 } });
+    const distant = pc({ manufacturer: null, model: null, cpu: { raw: "Intel Core 2 Duo E8400", confidence: 95 } });
+    const sa = createProductSignature(a, resolveHardware(a.cpu?.raw, a.gpu?.raw));
+    const sb = createProductSignature(b, resolveHardware(b.cpu?.raw, b.gpu?.raw));
+    const sd = createProductSignature(distant, resolveHardware(distant.cpu?.raw, distant.gpu?.raw));
+    expect(signatureSimilarity(sa, sb)).toBeGreaterThan(signatureSimilarity(sa, sd));
+    expect(signatureSimilarity(sa, sb)).toBeLessThan(1);
+  });
 });

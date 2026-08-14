@@ -130,7 +130,7 @@ If `market` is supplied by a public client, its source must be `user_estimate`. 
 
 Gaming requests may additionally supply `gaming.resolution` and `gaming.targetFps`.
 
-Response contains `result`, resolved hardware evidence, optional stored market evidence and a nullable `evaluationId`. The decision is one of `strong_buy`, `buy`, `fair`, `overpriced`, `avoid`, `insufficient_data`.
+Response contains `result`, resolved hardware evidence, optional stored market evidence and a nullable `evaluationId`. `result.scoreBreakdown` reports a 100-point allocation (performance 25, use-case fit 30, price 20, condition/warranty 10, longevity 15), earned points, factor scores, evidence coverage and explicit risk/evidence penalties. The decision is one of `strong_buy`, `buy`, `fair`, `overpriced`, `avoid`, `insufficient_data`.
 
 ## POST /api/v1/recommend
 

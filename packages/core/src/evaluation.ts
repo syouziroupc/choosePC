@@ -1,7 +1,26 @@
-import type { Decision, EvaluationInput, EvaluationResult, HardConstraint, ReasonDetail, ScoreVector } from "./types";
+import type {
+  Decision,
+  EvaluationInput,
+  EvaluationResult,
+  HardConstraint,
+  ReasonDetail,
+  ScoreBreakdown,
+  ScoreComponentBreakdown,
+  ScoreEvidenceStatus,
+  ScoreFactor,
+  ScoreVector,
+} from "./types";
 import { clamp, extractMetric, marketConfidence, scoreMarketValue, scoreRequirement } from "./scoring";
 
-export const ENGINE_VERSION = "0.2.1";
+export const ENGINE_VERSION = "0.3.0";
+
+const SCORE_WEIGHTS = {
+  performance: 25,
+  fit: 30,
+  price: 20,
+  condition: 10,
+  longevity: 15,
+} as const;
 
 const metricLabels: Record<string, string> = {
   cpuGeneral: "CPUの総合性能",
@@ -30,6 +49,22 @@ function weightedAverage(values: Array<{ value: number; weight: number }>, fallb
   return values.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight;
 }
 
+function roundScore(value: number, digits = 1): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function evidenceStatus(coverage: number, unavailable = false): ScoreEvidenceStatus {
+  if (unavailable) return "unavailable";
+  if (coverage >= 0.85) return "measured";
+  if (coverage > 0) return "estimated";
+  return "neutral";
+}
+
+function blendUnknown(raw: number, coverage: number, neutral = 50): number {
+  return clamp(raw * coverage + neutral * (1 - coverage));
+}
+
 function isGamingCategory(category: string): boolean {
   return ["gaming_laptop", "gaming_desktop", "bto_desktop", "custom_desktop"].includes(category);
 }
@@ -38,33 +73,50 @@ function isDesktopPowerRelevant(category: string): boolean {
   return ["gaming_desktop", "bto_desktop", "custom_desktop", "workstation"].includes(category);
 }
 
-function scoreHardware(input: EvaluationInput): number {
+type ComponentScore = { score: number; coverage: number; factors: ScoreFactor[] };
+
+function scoreHardware(input: EvaluationInput): ComponentScore {
   const { pc, hardware } = input;
-  const cpu = hardware.cpu?.general ?? 35;
-  const gpu = hardware.gpu?.gaming1080 ?? (pc.gpu?.variant === "integrated" ? 25 : 35);
-  const ram = clamp(((pc.memory?.sizeGb ?? 8) / 32) * 100);
-  const storage = clamp(((pc.storage?.reduce((sum, item) => sum + (item.sizeGb ?? 0), 0) ?? 256) / 1024) * 100);
-  const cooling = pc.extra?.coolingScore ?? 55;
-  if (isGamingCategory(pc.category)) {
-    return weightedAverage([
-      { value: hardware.cpu?.gaming ?? cpu, weight: 0.24 },
-      { value: gpu, weight: 0.42 },
-      { value: ram, weight: 0.12 },
-      { value: storage, weight: 0.08 },
-      { value: cooling, weight: 0.14 },
-    ]);
-  }
-  return weightedAverage([
-    { value: cpu, weight: 0.46 },
-    { value: ram, weight: 0.24 },
-    { value: storage, weight: 0.16 },
-    { value: pc.extra?.upgradeabilityScore ?? 60, weight: 0.14 },
-  ]);
+  const ramGb = pc.memory?.sizeGb ?? null;
+  const storageGb = pc.storage?.reduce((sum, item) => sum + (item.sizeGb ?? 0), 0) ?? 0;
+  const storageKnown = storageGb > 0;
+  const gaming = isGamingCategory(pc.category);
+  const definitions = gaming
+    ? [
+        { key: "cpu", label: "CPUゲーム性能", value: hardware.cpu?.gaming ?? hardware.cpu?.general ?? null, weight: 0.24 },
+        { key: "gpu", label: "GPU性能", value: hardware.gpu?.gaming1080 ?? null, weight: 0.42 },
+        { key: "memory", label: "メモリ容量", value: ramGb == null ? null : clamp((ramGb / 32) * 100), weight: 0.12, actual: ramGb },
+        { key: "storage", label: "ストレージ容量", value: storageKnown ? clamp((storageGb / 1024) * 100) : null, weight: 0.08, actual: storageKnown ? storageGb : null },
+        { key: "cooling", label: "冷却性能", value: pc.extra?.coolingScore ?? null, weight: 0.14 },
+      ]
+    : [
+        { key: "cpu", label: "CPU総合性能", value: hardware.cpu?.general ?? null, weight: 0.46 },
+        { key: "memory", label: "メモリ容量", value: ramGb == null ? null : clamp((ramGb / 32) * 100), weight: 0.24, actual: ramGb },
+        { key: "storage", label: "ストレージ容量", value: storageKnown ? clamp((storageGb / 1024) * 100) : null, weight: 0.16, actual: storageKnown ? storageGb : null },
+        { key: "upgradeability", label: "拡張性", value: pc.extra?.upgradeabilityScore ?? null, weight: 0.14 },
+      ];
+  const known = definitions.filter((item) => item.value != null) as Array<(typeof definitions)[number] & { value: number }>;
+  const coverage = clamp(known.reduce((sum, item) => sum + item.weight, 0), 0, 1);
+  const raw = weightedAverage(known.map((item) => ({ value: item.value, weight: item.weight })), 50);
+  const factors: ScoreFactor[] = definitions.map((item) => ({
+    key: item.key,
+    label: item.label,
+    score: item.value == null ? null : roundScore(item.value),
+    weight: item.weight,
+    coverage: item.value == null ? 0 : 1,
+    status: item.value == null ? "unavailable" : "measured",
+    actual: "actual" in item ? item.actual : undefined,
+  }));
+  return { score: blendUnknown(raw, coverage), coverage, factors };
 }
 
-function scoreCondition(input: EvaluationInput): number {
+function scoreCondition(input: EvaluationInput): ComponentScore {
   const { pc } = input;
-  if (pc.condition.type === "new") return 96;
+  if (pc.condition.type === "new") return {
+    score: 96,
+    coverage: 1,
+    factors: [{ key: "condition_type", label: "商品状態", score: 96, weight: 1, coverage: 1, status: "measured" }],
+  };
   const base = pc.condition.type === "refurbished" ? 84 : pc.condition.type === "used" ? 74 : 60;
   const gradeAdjustment: Record<string, number> = { S: 12, A: 8, B: 2, C: -10, D: -25, unknown: 0 };
   let result = base + gradeAdjustment[pc.condition.grade ?? "unknown"];
@@ -75,10 +127,29 @@ function scoreCondition(input: EvaluationInput): number {
   result -= Math.min(30, (pc.condition.defects?.length ?? 0) * 8);
   if ((pc.commerce.warrantyDays ?? 0) >= 90) result += 4;
   if ((pc.commerce.warrantyDays ?? 0) === 0) result -= 4;
-  return clamp(result);
+  const laptop = pc.category.includes("laptop") || pc.category === "mac";
+  const coverageParts = [
+    { known: pc.condition.type !== "unknown", weight: 0.45 },
+    { known: pc.condition.grade != null && pc.condition.grade !== "unknown", weight: 0.15 },
+    { known: !laptop || battery != null, weight: 0.15 },
+    { known: pc.commerce.warrantyDays != null, weight: 0.10 },
+    { known: Array.isArray(pc.condition.defects), weight: 0.15 },
+  ];
+  const coverage = coverageParts.reduce((sum, item) => sum + (item.known ? item.weight : 0), 0);
+  return {
+    score: blendUnknown(clamp(result), coverage, 60),
+    coverage,
+    factors: [
+      { key: "condition_type", label: "商品状態", score: pc.condition.type === "unknown" ? null : base, weight: 0.45, coverage: pc.condition.type === "unknown" ? 0 : 1, status: pc.condition.type === "unknown" ? "unavailable" : "measured" },
+      { key: "grade", label: "外観ランク", score: pc.condition.grade == null || pc.condition.grade === "unknown" ? null : clamp(base + gradeAdjustment[pc.condition.grade]), weight: 0.15, coverage: pc.condition.grade == null || pc.condition.grade === "unknown" ? 0 : 1, status: pc.condition.grade == null || pc.condition.grade === "unknown" ? "unavailable" : "measured" },
+      { key: "battery", label: "バッテリー状態", score: !laptop || battery == null ? null : battery, weight: 0.15, coverage: !laptop || battery == null ? 0 : 1, status: !laptop || battery == null ? "unavailable" : "measured", actual: battery },
+      { key: "warranty", label: "保証", score: pc.commerce.warrantyDays == null ? null : clamp(45 + Math.min(55, pc.commerce.warrantyDays / 3)), weight: 0.10, coverage: pc.commerce.warrantyDays == null ? 0 : 1, status: pc.commerce.warrantyDays == null ? "unavailable" : "measured", actual: pc.commerce.warrantyDays },
+      { key: "defects", label: "申告された不具合", score: !Array.isArray(pc.condition.defects) ? null : clamp(100 - pc.condition.defects.length * 20), weight: 0.15, coverage: Array.isArray(pc.condition.defects) ? 1 : 0, status: Array.isArray(pc.condition.defects) ? "measured" : "unavailable" },
+    ],
+  };
 }
 
-function scoreLongevity(input: EvaluationInput, fit: number): number {
+function scoreLongevity(input: EvaluationInput, fit: number, fitCoverage: number): ComponentScore {
   const { pc } = input;
   const upgrade = pc.extra?.upgradeabilityScore ?? 55;
   const age = pc.extra?.platformAgeYears;
@@ -86,13 +157,20 @@ function scoreLongevity(input: EvaluationInput, fit: number): number {
   const ageScore = age == null ? 60 : clamp(100 - Math.max(0, age - 1) * 8);
   const supportScore = supportYears == null ? 60 : clamp(45 + supportYears * 10);
   const memoryHeadroom = clamp(((pc.memory?.sizeGb ?? 8) / 32) * 100);
-  return weightedAverage([
-    { value: fit, weight: 0.35 },
-    { value: upgrade, weight: 0.22 },
-    { value: ageScore, weight: 0.18 },
-    { value: supportScore, weight: 0.15 },
-    { value: memoryHeadroom, weight: 0.10 },
-  ]);
+  const definitions = [
+    { key: "fit_headroom", label: "用途性能の余裕", value: fit, known: fitCoverage > 0, coverage: fitCoverage, weight: 0.35 },
+    { key: "upgradeability", label: "拡張性", value: upgrade, known: pc.extra?.upgradeabilityScore != null, coverage: pc.extra?.upgradeabilityScore != null ? 1 : 0, weight: 0.22 },
+    { key: "platform_age", label: "プラットフォーム年齢", value: ageScore, known: age != null, coverage: age != null ? 1 : 0, weight: 0.18 },
+    { key: "os_support", label: "OSサポート見込み", value: supportScore, known: supportYears != null, coverage: supportYears != null ? 1 : 0, weight: 0.15 },
+    { key: "memory_headroom", label: "メモリの余裕", value: memoryHeadroom, known: pc.memory?.sizeGb != null, coverage: pc.memory?.sizeGb != null ? 1 : 0, weight: 0.10 },
+  ];
+  const coverage = clamp(definitions.reduce((sum, item) => sum + item.weight * item.coverage, 0), 0, 1);
+  const raw = weightedAverage(definitions.filter((item) => item.known).map((item) => ({ value: item.value, weight: item.weight })), 50);
+  return {
+    score: blendUnknown(raw, coverage),
+    coverage,
+    factors: definitions.map((item) => ({ key: item.key, label: item.label, score: item.known ? roundScore(item.value) : null, weight: item.weight, coverage: item.coverage, status: item.known ? evidenceStatus(item.coverage) : "unavailable" })),
+  };
 }
 
 function deriveRisk(input: EvaluationInput, constraints: HardConstraint[]): number {
@@ -147,13 +225,70 @@ function deriveConfidence(input: EvaluationInput, essentialKnown: number, essent
 }
 
 export function aggregateScore(scores: ScoreVector): number {
-  const base = scores.hardware * 0.16 + scores.fit * 0.34 + scores.value * 0.24 + scores.condition * 0.08 + scores.longevity * 0.18;
+  const base = scores.hardware * SCORE_WEIGHTS.performance / 100
+    + scores.fit * SCORE_WEIGHTS.fit / 100
+    + scores.value * SCORE_WEIGHTS.price / 100
+    + scores.condition * SCORE_WEIGHTS.condition / 100
+    + scores.longevity * SCORE_WEIGHTS.longevity / 100;
   return clamp(base - Math.max(0, scores.risk - 20) * 0.38 - Math.max(0, 70 - scores.confidence) * 0.20);
+}
+
+function component(args: {
+  key: ScoreComponentBreakdown["key"];
+  label: string;
+  score: number;
+  maxPoints: number;
+  coverage: number;
+  factors: ScoreFactor[];
+  unavailable?: boolean;
+}): ScoreComponentBreakdown {
+  return {
+    key: args.key,
+    label: args.label,
+    score: roundScore(args.score),
+    maxPoints: args.maxPoints,
+    earnedPoints: roundScore(args.score * args.maxPoints / 100),
+    coverage: roundScore(clamp(args.coverage, 0, 1) * 100),
+    status: evidenceStatus(args.coverage, args.unavailable),
+    factors: args.factors,
+  };
+}
+
+function buildScoreBreakdown(args: {
+  scores: ScoreVector;
+  performance: ComponentScore;
+  fit: ComponentScore;
+  price: ComponentScore;
+  condition: ComponentScore;
+  longevity: ComponentScore;
+}): ScoreBreakdown {
+  const components = [
+    component({ key: "performance", label: "基本性能", score: args.scores.hardware, maxPoints: SCORE_WEIGHTS.performance, coverage: args.performance.coverage, factors: args.performance.factors }),
+    component({ key: "fit", label: "用途適合", score: args.scores.fit, maxPoints: SCORE_WEIGHTS.fit, coverage: args.fit.coverage, factors: args.fit.factors }),
+    component({ key: "price", label: "価格妥当性", score: args.scores.value, maxPoints: SCORE_WEIGHTS.price, coverage: args.price.coverage, factors: args.price.factors, unavailable: args.price.coverage === 0 }),
+    component({ key: "condition", label: "状態・保証", score: args.scores.condition, maxPoints: SCORE_WEIGHTS.condition, coverage: args.condition.coverage, factors: args.condition.factors }),
+    component({ key: "longevity", label: "将来性", score: args.scores.longevity, maxPoints: SCORE_WEIGHTS.longevity, coverage: args.longevity.coverage, factors: args.longevity.factors }),
+  ];
+  const subtotalPoints = components.reduce((sum, item) => sum + item.earnedPoints, 0);
+  const riskPenalty = Math.max(0, args.scores.risk - 20) * 0.38;
+  const evidencePenalty = Math.max(0, 70 - args.scores.confidence) * 0.20;
+  const evidenceCoverage = components.reduce((sum, item) => sum + item.coverage * item.maxPoints, 0) / 100;
+  return {
+    method: "weighted_non_compensatory_v1",
+    maximumPoints: 100,
+    subtotalPoints: roundScore(subtotalPoints),
+    riskPenalty: roundScore(riskPenalty),
+    evidencePenalty: roundScore(evidencePenalty),
+    totalPoints: roundScore(clamp(subtotalPoints - riskPenalty - evidencePenalty)),
+    evidenceCoverage: roundScore(evidenceCoverage),
+    components,
+  };
 }
 
 export function decide(scores: ScoreVector, constraints: HardConstraint[] = []): Decision {
   if (constraints.some((x) => x.severity === "critical" && x.known)) return "avoid";
-  if (constraints.some((x) => x.severity === "critical" && !x.known) || scores.confidence < 58) return "insufficient_data";
+  if (scores.confidence < 45) return "insufficient_data";
+  if (constraints.some((x) => x.severity === "critical" && !x.known)) return "avoid";
   if (scores.risk >= 70 || scores.fit < 45) return "avoid";
   if (scores.value < 38 && scores.fit >= 65) return "overpriced";
   const overall = aggregateScore(scores);
@@ -176,21 +311,29 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
   const warnings: string[] = [];
   const constraints: HardConstraint[] = [];
   const fitParts: Array<{ value: number; weight: number }> = [];
+  const fitFactors: ScoreFactor[] = [];
+  let fitKnownWeight = 0;
+  let fitTotalWeight = 0;
   let essentialKnown = 0;
   let essentialTotal = 0;
 
   for (const req of input.profile.requirements) {
     const actual = extractMetric(req.metric, input.pc, input.hardware);
     const label = metricLabel(req.metric);
+    fitTotalWeight += req.weight;
     if (req.essential) essentialTotal += 1;
     if (actual == null) {
       const policy = req.unknownPolicy ?? (req.essential ? "block" : "warn");
       if (policy === "block") constraints.push({ code: `missing:${req.metric}`, severity: "critical", known: false, message: `${label}が未入力、または判定用データがありません` });
       else if (policy === "warn") warnings.push(`${label}を確認できないため、この項目は判定材料が少なくなっています。`);
+      fitFactors.push({ key: req.metric, label, score: null, weight: req.weight, coverage: 0, status: "unavailable", actual: null, minimum: req.minimum, preferred: req.preferred });
       continue;
     }
     if (req.essential) essentialKnown += 1;
-    fitParts.push({ value: scoreRequirement(actual, req), weight: req.weight });
+    const requirementScore = scoreRequirement(actual, req);
+    fitParts.push({ value: requirementScore, weight: req.weight });
+    fitKnownWeight += req.weight;
+    fitFactors.push({ key: req.metric, label, score: roundScore(requirementScore), weight: req.weight, coverage: 1, status: "measured", actual, minimum: req.minimum, preferred: req.preferred });
     const fails = req.direction === "lower_is_better" ? actual > req.minimum : actual < req.minimum;
     const preferred = req.direction === "lower_is_better" ? actual <= req.preferred : actual >= req.preferred;
     if (fails) {
@@ -218,14 +361,39 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
     constraints.push({ code: "desktop:psu_unknown", severity: "warning", known: true, message: "電源情報が不明です" });
   }
 
-  const fit = clamp(weightedAverage(fitParts, 45));
+  const fitCoverage = fitTotalWeight > 0 ? clamp(fitKnownWeight / fitTotalWeight, 0, 1) : 0;
+  const fitRaw = clamp(weightedAverage(fitParts, 45));
+  const fit = blendUnknown(fitRaw, fitCoverage, 45);
   const value = scoreMarketValue(input.pc.commerce.priceJpy, input.market);
-  const condition = scoreCondition(input);
-  const hardware = clamp(scoreHardware(input));
-  const longevity = clamp(scoreLongevity(input, fit));
+  const conditionResult = scoreCondition(input);
+  const performanceResult = scoreHardware(input);
+  const longevityResult = scoreLongevity(input, fit, fitCoverage);
+  const condition = clamp(conditionResult.score);
+  const hardware = clamp(performanceResult.score);
+  const longevity = clamp(longevityResult.score);
   const risk = deriveRisk(input, constraints);
   const confidence = deriveConfidence(input, essentialKnown, essentialTotal);
   const scores: ScoreVector = { hardware, fit, value, condition, longevity, risk, confidence };
+  const priceCoverage = input.pc.commerce.priceJpy != null && input.market ? marketConfidence(input.market) / 100 : 0;
+  const priceRatio = input.pc.commerce.priceJpy != null && input.market?.fairPriceJpy
+    ? input.pc.commerce.priceJpy / input.market.fairPriceJpy
+    : null;
+  const priceResult: ComponentScore = {
+    score: value,
+    coverage: priceCoverage,
+    factors: [{
+      key: "price_to_market",
+      label: "販売価格と相場中央値の比較",
+      score: priceRatio == null ? null : roundScore(value),
+      weight: 1,
+      coverage: priceCoverage,
+      status: priceRatio == null ? "unavailable" : evidenceStatus(priceCoverage),
+      actual: priceRatio == null ? null : roundScore(priceRatio * 100),
+      preferred: 100,
+    }],
+  };
+  const fitResult: ComponentScore = { score: fit, coverage: fitCoverage, factors: fitFactors };
+  const scoreBreakdown = buildScoreBreakdown({ scores, performance: performanceResult, fit: fitResult, price: priceResult, condition: conditionResult, longevity: longevityResult });
 
   if (!input.market && (input.context ?? "purchase") === "purchase") warnings.push("比較できる相場データがないため、販売価格は良い・悪いのどちらにも判定していません。");
   if (input.market?.source === "user_estimate") warnings.push("比較相場は入力された参考価格です。実売データとは別に扱っています。");
@@ -234,7 +402,8 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
 
   const decision = applyMarketTrustGate(decide(scores, constraints), input, warnings);
   return {
-    scores: { ...scores, overall: aggregateScore(scores) },
+    scores: { ...scores, overall: scoreBreakdown.totalPoints },
+    scoreBreakdown,
     decision,
     reasons: reasons.map((r) => r.code),
     reasonDetails: reasons,
@@ -246,8 +415,18 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
 }
 
 export function buildEvaluationResult(args: { scores: ScoreVector; constraints?: HardConstraint[]; reasons?: string[]; warnings?: string[]; engineVersion: string; knowledgeVersion: string }): EvaluationResult {
+  const empty = (score: number): ComponentScore => ({ score, coverage: 0, factors: [] });
+  const scoreBreakdown = buildScoreBreakdown({
+    scores: args.scores,
+    performance: empty(args.scores.hardware),
+    fit: empty(args.scores.fit),
+    price: empty(args.scores.value),
+    condition: empty(args.scores.condition),
+    longevity: empty(args.scores.longevity),
+  });
   return {
-    scores: { ...args.scores, overall: aggregateScore(args.scores) },
+    scores: { ...args.scores, overall: scoreBreakdown.totalPoints },
+    scoreBreakdown,
     decision: decide(args.scores, args.constraints ?? []),
     reasons: args.reasons ?? [],
     reasonDetails: [],
