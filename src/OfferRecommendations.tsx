@@ -45,18 +45,38 @@ type Props = {
 };
 
 const decisionLabel: Record<string, string> = {
-  strong_buy: "買ってよい候補",
-  buy: "購入候補",
-  fair: "条件を確認",
-  overpriced: "価格が高め",
-  avoid: "見送り候補",
-  insufficient_data: "判定材料不足",
+  strong_buy: "条件にかなり合っています",
+  buy: "購入候補に残せます",
+  fair: "条件を確認して比較",
+  overpriced: "価格面は慎重に比較",
+  avoid: "この条件では見送り寄り",
+  insufficient_data: "判定材料が不足",
 };
 
 function merchantLabel(type: CommercialOffer["merchantType"]): string {
   if (type === "own") return "正二郎商事取扱";
   if (type === "affiliate") return "紹介リンク";
   return "外部販売店";
+}
+
+function fitLabel(score: number): string {
+  if (score >= 85) return "用途：十分";
+  if (score >= 65) return "用途：概ね十分";
+  if (score >= 45) return "用途：要確認";
+  return "用途：不足気味";
+}
+
+function valueLabel(score: number): string {
+  if (score >= 82) return "価格：良い";
+  if (score >= 60) return "価格：妥当";
+  if (score >= 45) return "価格：比較推奨";
+  return "価格：高め";
+}
+
+function evidenceLabel(score: number): string {
+  if (score >= 80) return "情報：十分";
+  if (score >= 60) return "情報：概ね十分";
+  return "情報：要確認";
 }
 
 export default function OfferRecommendations({ category, useCase, initialMaxPriceJpy, gaming }: Props) {
@@ -95,7 +115,7 @@ export default function OfferRecommendations({ category, useCase, initialMaxPric
       setCommercial(data.commercialOffers ?? []);
       setLoaded(true);
       if (!(data.ranked?.length)) setNotice("この条件で比較できる販売商品は現在登録されていません。上限価格を変えるか、別のPCを診断してください。");
-      else if (!(data.commercialOffers?.length)) setNotice("判定対象は見つかりましたが、商品ページへ案内できる販売情報がありません。順位だけを表示することはしません。");
+      else if (!(data.commercialOffers?.length)) setNotice("判定対象は見つかりましたが、商品ページへ案内できる販売情報がありません。販売ページを確認できない候補は表示しません。");
     } catch (error) {
       setLoaded(true);
       setRanked([]);
@@ -115,8 +135,8 @@ export default function OfferRecommendations({ category, useCase, initialMaxPric
   return (
     <section id="offers" className="offer-section" aria-labelledby="offer-heading">
       <div className="section-heading">
-        <h2 id="offer-heading">同じ条件で買えるPCを比較</h2>
-        <p>現在登録されている販売商品の中から、用途・価格・リスクを同じ基準で判定したものだけを表示します。自社取扱や紹介料の有無は順位計算に使いません。</p>
+        <h2 id="offer-heading">条件に合う販売中のPC</h2>
+        <p>登録済みの販売商品を同じ判定基準で比較します。自社取扱や紹介料の有無は評価に使用しません。</p>
       </div>
 
       <div className="offer-controls">
@@ -125,22 +145,26 @@ export default function OfferRecommendations({ category, useCase, initialMaxPric
           <span className="offer-price-input"><input type="number" min="1" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder="指定なし" /><span>円</span></span>
         </label>
         <button type="button" className="primary" onClick={search} disabled={busy}>{busy ? "販売商品を確認中…" : "販売候補を探す"}</button>
-        <p>在庫として登録されていない商品や、価格を確認できない商品は表示しません。</p>
+        <p>在庫・価格を確認できない商品は表示しません。</p>
       </div>
 
       {notice && <p className="notice" role="status">{notice}</p>}
 
       {loaded && visible.length > 0 && <div className="offer-list" aria-live="polite">
         {visible.map(({ ranked: item, offer }) => <article className="offer-row" key={offer.offerId}>
-          <div className="offer-rank"><span>順位</span><strong>{item.rank}</strong></div>
           <div className="offer-main">
             <div className="offer-title-line"><h3>{offer.title}</h3><span className={`merchant-type ${offer.merchantType}`}>{merchantLabel(offer.merchantType)}</span></div>
-            <p className="offer-merchant">販売元: {offer.merchant}</p>
-            <div className="offer-metrics"><span><strong>{offer.priceJpy.toLocaleString()}</strong>円</span><span>総合 {Math.round(item.result.scores.overall)}点</span><span>用途 {Math.round(item.result.scores.fit)}点</span><span>価格 {Math.round(item.result.scores.value)}点</span><span>判定情報 {Math.round(item.result.scores.confidence)}%</span></div>
+            <p className="offer-merchant">販売元：{offer.merchant}</p>
+            <div className="offer-metrics">
+              <span><strong>{offer.priceJpy.toLocaleString()}</strong>円</span>
+              <span className="offer-signal">{fitLabel(item.result.scores.fit)}</span>
+              <span className="offer-signal">{valueLabel(item.result.scores.value)}</span>
+              <span className="offer-signal">{evidenceLabel(item.result.scores.confidence)}</span>
+            </div>
             <p className="offer-decision">{decisionLabel[item.result.decision] ?? item.result.decision}</p>
             {offer.disclosureRequired && <p className="offer-disclosure">{offer.disclosureText || "この商品リンクには商用関係があります。"}</p>}
           </div>
-          <div className="offer-action"><a href={offer.outboundPath} rel={offer.merchantType === "normal" ? "noopener" : "sponsored nofollow noopener"}>商品ページを開く</a></div>
+          <div className="offer-action"><a href={offer.outboundPath} rel={offer.merchantType === "normal" ? "noopener" : "sponsored nofollow noopener"}>商品ページを確認</a></div>
         </article>)}
       </div>}
     </section>
