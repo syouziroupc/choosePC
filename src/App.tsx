@@ -79,6 +79,11 @@ const decisionText: Record<string, [string, string]> = {
 const replacementText: Record<ReplacementResult["decision"], string> = { keep: "そのまま使う", upgrade: "増設を優先", repair_or_inspect: "修理・点検を優先", replace: "買い替え候補", insufficient_data: "情報不足" };
 const saleText: Record<SaleAssessment["decision"], string> = { sellable: "売却価値あり", compare_quotes: "査定比較を推奨", repair_then_sell: "修理費と査定を比較", recycle_or_parts: "回収・部品価値も比較", insufficient_data: "相場データ不足" };
 const scoreLabels: Array<[keyof EvaluationResult["scores"], string]> = [["fit", "用途適合"], ["value", "価格"], ["hardware", "構成"], ["condition", "状態"], ["longevity", "将来性"], ["confidence", "判定信頼度"]];
+const workflowText: Record<Workflow, { label: string; detail: string }> = {
+  purchase: { label: "買う", detail: "購入候補の性能・用途・価格を確認" },
+  replacement: { label: "買い替える", detail: "今のPCを使い続けるか確認" },
+  sale: { label: "売る", detail: "売却・回収の判断材料を確認" },
+};
 
 function numberOrNull(value: string): number | null {
   const parsed = Number(value);
@@ -141,7 +146,6 @@ export default function App() {
   const concerns = useMemo(() => result?.reasonDetails.filter((x) => x.kind === "warning" || x.kind === "critical").slice(0, 5) ?? [], [result]);
   const hasOutput = Boolean(result || sale);
   const showOffers = workflow === "purchase" && Boolean(result) && !replacement;
-  const principleStep = !hasOutput ? "03" : showOffers ? "05" : "04";
 
   function patch<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -158,13 +162,6 @@ export default function App() {
     setWorkflow(next);
     resetOutput();
     if (next !== "purchase") setMode("manual");
-  }
-
-  function startDiagnosis(nextMode: Mode) {
-    setWorkflow("purchase");
-    setMode(nextMode);
-    resetOutput();
-    requestAnimationFrame(() => document.getElementById("judge")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   async function inspectUrl() {
@@ -275,66 +272,51 @@ export default function App() {
   return (
     <div className="page-shell">
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="PC ASSIST トップ"><strong>PC ASSIST</strong><span>正二郎商事のPC判断支援</span></a>
+        <a className="brand" href="#top" aria-label="PC ASSIST トップ">
+          <strong>PC ASSIST</strong>
+          <span>正二郎商事株式会社</span>
+        </a>
         <nav aria-label="主要ナビゲーション">
-          <a href="#how">使い方</a>
-          <a href="#judge">診断する</a>
-          <a href="#principle">判定方針</a>
-          <a href="https://www.szpc.jp/" target="_blank" rel="noreferrer">正二郎商事 ↗</a>
+          <a href="#judge">診断</a>
+          <a href="#principle">判定基準</a>
+          <a href="https://www.szpc.jp/" target="_blank" rel="noreferrer">運営会社</a>
         </nav>
-        <a className="header-cta" href="#judge">無料で診断</a>
       </header>
 
       <main id="top">
-        <section className="hero">
-          <p className="eyebrow">PC DECISION SUPPORT / FREE</p>
-          <h1>買ってから後悔する前に、<br />そのPCを数字で確かめる。</h1>
-          <p className="lead">性能だけでなく、あなたの用途・販売価格・状態・将来性まで分けて評価。買う、買い替える、売るの判断を、根拠付きで整理します。</p>
-          <div className="hero-actions">
-            <button className="hero-action primary-action" onClick={() => startDiagnosis("url")}>商品URLで診断する <span>→</span></button>
-            <button className="hero-action secondary-action" onClick={() => startDiagnosis("manual")}>スペックから診断 <span>→</span></button>
-          </div>
-          <div className="hero-proof" aria-label="PC ASSISTの特徴">
-            <span><strong>0円</strong>診断料金</span>
-            <span><strong>3用途</strong>購入・買替・売却</span>
-            <span><strong>分離評価</strong>性能 / 用途 / 価格 / 状態</span>
-            <span><strong>情報不足を明示</strong>分からない時は断定しない</span>
-          </div>
+        <section className="intro" aria-labelledby="page-title">
+          <h1 id="page-title">PCの購入・買い替え・売却を判定</h1>
+          <p>商品URL、または分かる範囲のスペックを入力すると、用途適合・価格・状態・将来性を別々に評価します。判断材料が足りない場合は「情報不足」と表示します。</p>
+          <dl className="intro-facts">
+            <div><dt>対象</dt><dd>一般PC・中古PC・ゲーミングPC・BTO・自作PC</dd></div>
+            <div><dt>入力</dt><dd>商品URLまたはスペック</dd></div>
+            <div><dt>結果</dt><dd>購入判定・買い替え必要度・売却判断</dd></div>
+          </dl>
         </section>
 
-        <section id="how" className="journey" aria-labelledby="journey-title">
-          <div className="journey-intro">
-            <p className="eyebrow">HOW IT WORKS</p>
-            <h2 id="journey-title">迷っているPCを、そのまま持ってくる。</h2>
-          </div>
-          <ol className="journey-steps">
-            <li><span>01</span><div><strong>商品URLかスペックを入力</strong><p>販売ページから主要情報を読み取るか、分かる範囲だけ手入力します。</p></div></li>
-            <li><span>02</span><div><strong>用途と価格を別々に評価</strong><p>高性能でも用途に合わない、安くてもリスクが高い、といった差を分離します。</p></div></li>
-            <li><span>03</span><div><strong>結果から次の行動へ</strong><p>購入候補の比較、買い替え相談、売却・回収までそのまま進めます。</p></div></li>
-          </ol>
-        </section>
+        <section id="judge" className="judge-section" aria-labelledby="judge-heading">
+          <SectionHeading id="judge-heading" title="診断" text="最初に、何を判断したいか選んでください。分からない項目は空欄のままで構いません。" />
 
-        <section id="judge" className="judge-section">
-          <SectionHeading step="01" title="まず、判断したいことを選ぶ" text="分からない項目は空欄で構いません。判断に必要な情報が不足する場合は、そのこと自体を結果に表示します。" />
           <div className="workflow-switch" aria-label="診断の種類">
-            {(["purchase", "replacement", "sale"] as Workflow[]).map((item, index) => (
-              <button key={item} className={workflow === item ? "active" : ""} onClick={() => chooseWorkflow(item)}>
-                <span>0{index + 1}</span>
-                <strong>{item === "purchase" ? "買いたい" : item === "replacement" ? "買い替えたい" : "売りたい"}</strong>
-                <small>{item === "purchase" ? "候補PCの妥当性" : item === "replacement" ? "今のPCを使い続けるか" : "売却・回収の判断"}</small>
+            {(["purchase", "replacement", "sale"] as Workflow[]).map((item) => (
+              <button key={item} className={workflow === item ? "active" : ""} onClick={() => chooseWorkflow(item)} aria-pressed={workflow === item}>
+                <strong>{workflowText[item].label}</strong>
+                <small>{workflowText[item].detail}</small>
               </button>
             ))}
           </div>
-          <div className="mode-switch">
-            <button className={mode === "url" ? "active" : ""} disabled={workflow !== "purchase"} onClick={() => setMode("url")}>商品URLから</button>
+
+          <div className="mode-switch" aria-label="入力方法">
+            <button className={mode === "url" ? "active" : ""} disabled={workflow !== "purchase"} onClick={() => setMode("url")}>商品URL</button>
             <button className={mode === "manual" ? "active" : ""} onClick={() => setMode("manual")}>スペックから</button>
           </div>
 
           {mode === "url" && workflow === "purchase" && <div className="url-panel">
-            <div className="input-heading"><label htmlFor="product-url">商品ページURL</label><span>Amazon / 楽天 / Yahoo! / メルカリ / 主要メーカー・BTO</span></div>
-            <div className="url-row"><input id="product-url" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://..." /><button className="primary" disabled={busy || !url.trim()} onClick={inspectUrl}>{busy ? "解析中…" : "URLを読み取る"}</button></div>
-            <p className="support-note">取得できない項目があっても診断は継続できます。読み取り後に不足項目だけ確認できます。</p>
+            <div className="input-heading"><label htmlFor="product-url">商品ページURL</label><span>Amazon・楽天・Yahoo!ショッピング・メルカリ・主要メーカー/BTO</span></div>
+            <div className="url-row"><input id="product-url" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://..." /><button className="primary" disabled={busy || !url.trim()} onClick={inspectUrl}>{busy ? "読み取り中…" : "商品情報を読み取る"}</button></div>
+            <p className="support-note">取得できなかった項目は空欄のまま残し、読み取り後に確認できます。</p>
           </div>}
+
           {notice && <p className="notice" role="status">{notice}</p>}
 
           {mode === "manual" && <form className="spec-form" onSubmit={submit}>
@@ -350,7 +332,7 @@ export default function App() {
               {workflow === "purchase" && <NumberField label="販売価格" value={form.price} unit="円" min="0" onChange={(value) => patch("price", value)} />}
               {workflow !== "replacement" && <NumberField label="比較相場（分かる場合）" value={form.fairPrice} unit="円" min="0" onChange={(value) => patch("fairPrice", value)} />}
             </div>
-            <button type="button" className="advanced-toggle" onClick={() => setAdvanced((value) => !value)}>{advanced ? "詳細項目を閉じる" : "保証・状態なども入力する"}</button>
+            <button type="button" className="advanced-toggle" onClick={() => setAdvanced((value) => !value)}>{advanced ? "保証・状態などを閉じる" : "保証・状態なども入力する"}</button>
             {advanced && <div className="form-grid advanced-fields">
               <label>状態<select value={form.condition} onChange={(event) => patch("condition", event.target.value as FormState["condition"])}><option value="unknown">不明</option><option value="new">新品</option><option value="refurbished">整備済み</option><option value="used">中古</option></select></label>
               <label>外観ランク<select value={form.grade} onChange={(event) => patch("grade", event.target.value as FormState["grade"])}><option value="unknown">不明</option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
@@ -361,7 +343,7 @@ export default function App() {
               {form.useCase === "gaming" && <><label>ゲーム解像度<select value={form.gamingResolution} onChange={(event) => patch("gamingResolution", event.target.value as FormState["gamingResolution"])}><option>1080p</option><option>1440p</option><option value="4k">4K</option></select></label><label>目標FPS<select value={form.targetFps} onChange={(event) => patch("targetFps", event.target.value as FormState["targetFps"])}><option>60</option><option>120</option><option>144</option><option>240</option></select></label></>}
               {isGaming && <><NumberField label="GPU TGP" value={form.gpuTgp} unit="W" min="1" max="1000" onChange={(value) => patch("gpuTgp", value)} /><NumberField label="VRAM" value={form.vram} unit="GB" min="0" onChange={(value) => patch("vram", value)} /></>}
             </div>}
-            <div className="submit-row"><button className="primary large" disabled={busy}>{busy ? "判定中…" : workflow === "purchase" ? "このPCを判定する" : workflow === "replacement" ? "買い替え必要性を判定する" : "売却価値を確認する"}</button><p>{workflow === "purchase" ? "相場の根拠が弱ければ『買い』を断定しません。" : workflow === "replacement" ? "購入価格ではなく現在の用途適合・状態・将来性を見ます。" : "観測相場DBが不足している間は、買取額を勝手に生成しません。"}</p></div>
+            <div className="submit-row"><button className="primary large" disabled={busy}>{busy ? "判定中…" : workflow === "purchase" ? "このPCを判定する" : workflow === "replacement" ? "買い替え必要性を判定する" : "売却価値を確認する"}</button><p>{workflow === "purchase" ? "相場の根拠が弱い場合は、購入推奨を断定しません。" : workflow === "replacement" ? "購入時の価格ではなく、現在の用途適合・状態・将来性を見ます。" : "観測相場が不足している場合は、買取額を推測で表示しません。"}</p></div>
           </form>}
         </section>
 
@@ -370,36 +352,36 @@ export default function App() {
         {sale && <SaleView sale={sale} />}
         {showOffers && result && <OfferRecommendations category={form.category} useCase={form.useCase} initialMaxPriceJpy={numberOrNull(form.price)} gaming={form.useCase === "gaming" ? { resolution: form.gamingResolution, targetFps: Number(form.targetFps) as 60 | 120 | 144 | 240 } : undefined} />}
 
-        <ActionBridge workflow={workflow} hasOutput={hasOutput} />
+        {hasOutput && <NextActions workflow={workflow} />}
 
-        <section id="principle" className="principle">
-          <SectionHeading step={principleStep} title="PC ASSISTが、平均点だけで決めない理由" text="高性能だから買い、安いから買い、という単純なランキングではなく、用途上の失敗を避ける順序で判定します。" />
-          <ol className="principle-list"><li><strong>用途の必須条件</strong><span>必要性能を満たさないPCは、安くても推奨しません。</span></li><li><strong>重大リスク</strong><span>電源不足や状態不明などの重大要因は、他項目の高得点で打ち消しません。</span></li><li><strong>価格</strong><span>使えるPCでも価格が高ければ、性能評価と切り分けて「割高」と表示します。</span></li><li><strong>根拠の確かさ</strong><span>CPU・GPU・相場など重要情報が不足する場合は、無理に結論を作りません。</span></li></ol>
+        <section id="principle" className="principle" aria-labelledby="principle-heading">
+          <SectionHeading id="principle-heading" title="判定基準" text="総合点だけで結論を決めず、用途不足や重大なリスクを先に確認します。" />
+          <dl className="principle-list">
+            <div><dt>用途</dt><dd>必要性能を満たさないPCは、価格が安くても推奨しません。</dd></div>
+            <div><dt>リスク</dt><dd>電源不足や状態不明などの重大要因は、他項目の高得点で打ち消しません。</dd></div>
+            <div><dt>価格</dt><dd>使えるPCでも価格が高い場合は、性能評価とは分けて「割高」と表示します。</dd></div>
+            <div><dt>根拠</dt><dd>CPU・GPU・相場などの重要情報が不足する場合は「情報不足」と表示します。</dd></div>
+          </dl>
         </section>
 
-        <section className="company-band" aria-labelledby="company-band-title">
-          <p className="eyebrow">OPERATED BY SYOUZIRou SHOJI</p>
-          <h2 id="company-band-title">診断だけで終わらせず、PC選びそのものも相談できます。</h2>
-          <p>PC ASSISTは正二郎商事株式会社が運営しています。中古PCの購入相談、法人導入、不要PCの回収・引取まで、必要な場合だけ人に引き継げます。</p>
-          <div className="company-band-links">
-            <a className="solid-link" href="https://www.szpc.jp/products/" target="_blank" rel="noreferrer" onClick={() => track("company_cta_click", { workflow, target: "products" })}>中古PC販売を見る <span>↗</span></a>
-            <a href="https://forms.gle/NXQJ4pWRbFBoowWz9" target="_blank" rel="noreferrer" onClick={() => track("company_cta_click", { workflow, target: "contact" })}>条件を伝えて相談する <span>↗</span></a>
-            <a href="https://www.szpc.jp/pc-recycle/" target="_blank" rel="noreferrer" onClick={() => track("company_cta_click", { workflow, target: "recycle" })}>不要PCの回収・売却相談 <span>↗</span></a>
-          </div>
+        <section className="operator" aria-labelledby="operator-heading">
+          <h2 id="operator-heading">運営</h2>
+          <p><strong>正二郎商事株式会社</strong>（大分県別府市）が運営しています。</p>
+          <p className="operator-links"><a href="https://www.szpc.jp/" target="_blank" rel="noreferrer">会社サイト</a><a href="https://www.szpc.jp/products/" target="_blank" rel="noreferrer">中古PC販売</a><a href="https://www.szpc.jp/pc-recycle/" target="_blank" rel="noreferrer">PC回収・引取</a></p>
         </section>
       </main>
 
       <footer>
-        <div><strong>PC ASSIST</strong><span> by 正二郎商事株式会社</span></div>
-        <div className="footer-links"><a href="#judge">診断</a><a href="#principle">判定方針</a><a href="https://www.szpc.jp/" target="_blank" rel="noreferrer">運営会社</a></div>
-        <p>一部リンクから紹介料を受け取る場合があります。紹介料の有無は評価・順位に使用しません。</p>
+        <strong>PC ASSIST</strong>
+        <span>正二郎商事株式会社</span>
+        <p>一部の商品リンクから紹介料を受け取る場合があります。紹介料の有無は評価・順位に使用しません。</p>
       </footer>
     </div>
   );
 }
 
-function SectionHeading({ step, title, text }: { step: string; title: string; text: string }) {
-  return <div className="section-heading"><p className="step">{step}</p><div><h2>{title}</h2><p>{text}</p></div></div>;
+function SectionHeading({ id, title, text }: { id?: string; title: string; text: string }) {
+  return <div className="section-heading"><h2 id={id}>{title}</h2><p>{text}</p></div>;
 }
 
 function NumberField({ label, value, unit, min, max, step, onChange }: { label: string; value: string; unit: string; min?: string; max?: string; step?: string; onChange: (value: string) => void }) {
@@ -407,25 +389,25 @@ function NumberField({ label, value, unit, min, max, step, onChange }: { label: 
 }
 
 function PurchaseResult({ result, positives, concerns }: { result: EvaluationResult; positives: EvaluationResult["reasonDetails"]; concerns: EvaluationResult["reasonDetails"] }) {
-  return <section id="result" className="result"><SectionHeading step="02" title="購入判定" text="成果報酬の有無は評価点に影響しません。" /><div className="verdict"><div className="overall"><strong>{Math.round(result.scores.overall)}</strong><span>/100</span></div><div><p className="decision-label">{decisionText[result.decision]?.[0] ?? result.decision}</p><p>{decisionText[result.decision]?.[1]}</p></div></div><ScoreTable result={result} /><div className="result-columns"><div><h3>評価できる点</h3><ul>{positives.map((item) => <li key={item.code}>{item.message}</li>)}</ul></div><div><h3>確認したい点</h3><ul>{concerns.map((item) => <li key={item.code}>{item.message}</li>)}{result.warnings.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul></div></div><p className="engine-note">Engine {result.engineVersion} / Knowledge {result.knowledgeVersion} / 信頼度 {Math.round(result.scores.confidence)}%</p></section>;
+  return <section id="result" className="result"><SectionHeading title="購入判定" text="紹介料や自社取扱の有無は判定点に影響しません。" /><div className="verdict"><div className="overall"><strong>{Math.round(result.scores.overall)}</strong><span>/100</span></div><div><p className="decision-label">{decisionText[result.decision]?.[0] ?? result.decision}</p><p>{decisionText[result.decision]?.[1]}</p></div></div><ScoreTable result={result} /><div className="result-columns"><div><h3>評価できる点</h3><ul>{positives.map((item) => <li key={item.code}>{item.message}</li>)}</ul></div><div><h3>確認したい点</h3><ul>{concerns.map((item) => <li key={item.code}>{item.message}</li>)}{result.warnings.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul></div></div><p className="engine-note">Engine {result.engineVersion} / Knowledge {result.knowledgeVersion} / 判定信頼度 {Math.round(result.scores.confidence)}%</p></section>;
 }
 
 function ReplacementView({ result, replacement }: { result: EvaluationResult; replacement: ReplacementResult }) {
-  return <section id="result" className="result"><SectionHeading step="02" title="買い替え判定" text="現在のPCを今の用途で使い続ける合理性を評価します。" /><div className="verdict"><div className="overall"><strong>{replacement.urgency}</strong><span>/100</span></div><div><p className="decision-label">{replacementText[replacement.decision]}</p><p>買い替え必要度</p></div></div><div className="result-columns"><div><h3>判断理由</h3><ul>{replacement.reasons.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>現在PC</h3><p>用途適合 {Math.round(result.scores.fit)} / 将来性 {Math.round(result.scores.longevity)} / リスク {Math.round(result.scores.risk)} / 信頼度 {Math.round(result.scores.confidence)}</p></div></div></section>;
+  return <section id="result" className="result"><SectionHeading title="買い替え判定" text="現在のPCを今の用途で使い続けられるかを評価します。" /><div className="verdict"><div className="overall"><strong>{replacement.urgency}</strong><span>/100</span></div><div><p className="decision-label">{replacementText[replacement.decision]}</p><p>買い替え必要度</p></div></div><div className="result-columns"><div><h3>判断理由</h3><ul>{replacement.reasons.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>現在のPC</h3><p>用途適合 {Math.round(result.scores.fit)} / 将来性 {Math.round(result.scores.longevity)} / リスク {Math.round(result.scores.risk)} / 信頼度 {Math.round(result.scores.confidence)}</p></div></div></section>;
 }
 
 function SaleView({ sale }: { sale: SaleAssessment }) {
-  return <section id="result" className="result"><SectionHeading step="02" title="売却判定" text="観測データだけを使い、業者の買取額は生成しません。" /><div className="verdict"><div><p className="decision-label">{saleText[sale.decision]}</p><p>{sale.reasons[0]}</p></div></div>{sale.market && <div className="market-summary"><strong>参考市場価格 {sale.market.fairPriceJpy.toLocaleString()}円</strong>{sale.market.lowPriceJpy != null && sale.market.highPriceJpy != null && <span>観測レンジ {sale.market.lowPriceJpy.toLocaleString()}～{sale.market.highPriceJpy.toLocaleString()}円</span>}<span>相場信頼度 {Math.round(sale.market.confidence)}%</span></div>}</section>;
+  return <section id="result" className="result"><SectionHeading title="売却判定" text="登録済みの相場データだけを使い、買取額を推測で生成しません。" /><div className="verdict"><div><p className="decision-label">{saleText[sale.decision]}</p><p>{sale.reasons[0]}</p></div></div>{sale.market && <div className="market-summary"><strong>参考市場価格 {sale.market.fairPriceJpy.toLocaleString()}円</strong>{sale.market.lowPriceJpy != null && sale.market.highPriceJpy != null && <span>観測レンジ {sale.market.lowPriceJpy.toLocaleString()}～{sale.market.highPriceJpy.toLocaleString()}円</span>}<span>相場信頼度 {Math.round(sale.market.confidence)}%</span></div>}</section>;
 }
 
-function ActionBridge({ workflow, hasOutput }: { workflow: Workflow; hasOutput: boolean }) {
+function NextActions({ workflow }: { workflow: Workflow }) {
   const content = workflow === "purchase"
-    ? { label: hasOutput ? "判定結果を次の行動へ" : "判定後、そのまま比較・相談へ", title: hasOutput ? "条件に合う別のPCも、続けて比較できます。" : "診断結果は、購入候補を絞るために使えます。", primary: "販売中の中古PCを見る", primaryHref: "https://www.szpc.jp/products/", secondary: "PC選びを相談する", secondaryHref: "https://forms.gle/NXQJ4pWRbFBoowWz9" }
+    ? { title: "購入判定のあと", links: [{ label: "販売中の中古PCを見る", href: "https://www.szpc.jp/products/" }, { label: "条件を送ってPC選びを相談する（Google Forms）", href: "https://forms.gle/NXQJ4pWRbFBoowWz9" }] }
     : workflow === "replacement"
-      ? { label: hasOutput ? "修理・買い替えを具体化" : "判断後、修理・買い替えへ", title: hasOutput ? "修理するか買い替えるか、条件を伝えて相談できます。" : "判定結果をもとに、次の選択肢を整理できます。", primary: "買い替え候補を見る", primaryHref: "https://www.szpc.jp/products/", secondary: "条件を伝えて相談する", secondaryHref: "https://forms.gle/NXQJ4pWRbFBoowWz9" }
-      : { label: hasOutput ? "売却・回収を具体化" : "判断後、売却・回収へ", title: hasOutput ? "使わないPCは、売却・引取・回収まで相談できます。" : "相場と状態を確認してから、売却・回収へ進めます。", primary: "回収・引取条件を見る", primaryHref: "https://www.szpc.jp/pc-recycle/", secondary: "売却・回収を相談する", secondaryHref: "https://forms.gle/NXQJ4pWRbFBoowWz9" };
+      ? { title: "買い替え判定のあと", links: [{ label: "買い替え候補の中古PCを見る", href: "https://www.szpc.jp/products/" }, { label: "現在のPCと希望条件を送る（Google Forms）", href: "https://forms.gle/NXQJ4pWRbFBoowWz9" }] }
+      : { title: "売却判定のあと", links: [{ label: "PC回収・引取の条件を見る", href: "https://www.szpc.jp/pc-recycle/" }, { label: "型番・台数・状態を送って相談する（Google Forms）", href: "https://forms.gle/NXQJ4pWRbFBoowWz9" }] };
 
-  return <section className="action-bridge" aria-label="診断後の選択肢"><p className="action-label">{content.label}</p><div className="action-bridge-main"><h2>{content.title}</h2><div className="action-links"><a href={content.primaryHref} target="_blank" rel="noreferrer" onClick={() => track("next_action_click", { workflow, target: "primary" })}>{content.primary} <span>↗</span></a><a href={content.secondaryHref} target="_blank" rel="noreferrer" onClick={() => track("next_action_click", { workflow, target: "secondary" })}>{content.secondary} <span>↗</span></a></div></div></section>;
+  return <section className="next-actions" aria-labelledby="next-actions-heading"><h2 id="next-actions-heading">{content.title}</h2><ul>{content.links.map((link) => <li key={link.label}><a href={link.href} target="_blank" rel="noreferrer" onClick={() => track("next_action_click", { workflow, target: link.href.includes("forms.gle") ? "contact" : "service" })}>{link.label}</a></li>)}</ul></section>;
 }
 
 function ScoreTable({ result }: { result: EvaluationResult }) {

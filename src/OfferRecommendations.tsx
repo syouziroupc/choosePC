@@ -115,11 +115,8 @@ export default function OfferRecommendations({ category, useCase, initialMaxPric
   return (
     <section id="offers" className="offer-section" aria-labelledby="offer-heading">
       <div className="section-heading">
-        <p className="step">03</p>
-        <div>
-          <h2 id="offer-heading">同じ条件の販売候補を比較</h2>
-          <p>登録済みの商品だけを同じ判定基準で並べます。紹介料や自社取扱の有無は順位計算後に付与されます。</p>
-        </div>
+        <h2 id="offer-heading">販売候補を比較</h2>
+        <p>登録済みの商品だけを同じ判定基準で並べます。紹介料や自社取扱の有無は順位計算に使いません。</p>
       </div>
 
       <div className="offer-controls">
@@ -128,7 +125,7 @@ export default function OfferRecommendations({ category, useCase, initialMaxPric
           <span className="offer-price-input"><input type="number" min="1" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder="指定なし" /><span>円</span></span>
         </label>
         <button type="button" className="primary" onClick={search} disabled={busy}>{busy ? "候補を評価中…" : "販売候補を探す"}</button>
-        <p>候補が未登録の場合は、無理に商品を表示しません。</p>
+        <p>登録されていない商品を推測で追加することはありません。</p>
       </div>
 
       {notice && <p className="notice" role="status">{notice}</p>}

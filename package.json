@@ -14,9 +14,10 @@
     "deploy": "npm run build && wrangler deploy",
     "deploy:dry": "npm run build && wrangler deploy --dry-run",
     "validate:knowledge": "node scripts/validate_knowledge.mjs",
+    "validate:ui": "node scripts/validate_ui_authenticity.mjs",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "check": "npm run validate:knowledge && npm run typecheck && npm test && npm run build"
+    "check": "npm run validate:knowledge && npm run validate:ui && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "react": "19.2.8",
