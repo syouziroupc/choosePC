@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import worker from "../src/browser-enhanced-entry";
+import worker, { UI_REVISION } from "../src/browser-enhanced-entry";
 
 type BrowserMock = {
   quickAction: ReturnType<typeof vi.fn>;
@@ -16,7 +16,18 @@ function context() {
   return { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
 }
 
-describe("browser-enhanced URL inspection", () => {
+describe("browser-enhanced production entry", () => {
+  it("exposes the deployed UI revision through health", async () => {
+    const browser: BrowserMock = { quickAction: vi.fn() };
+    const response = await worker.fetch(new Request("https://choosepc.example/api/v1/health"), env(browser), context());
+    const body = await response.json() as { ok?: boolean; service?: string; uiRevision?: string };
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.service).toBe("choosePC");
+    expect(body.uiRevision).toBe(UI_REVISION);
+    expect(browser.quickAction).not.toHaveBeenCalled();
+  });
+
   it("does not invoke Browser Run when the deterministic parser already has enough fields", async () => {
     const browser: BrowserMock = { quickAction: vi.fn() };
     const html = `<html><head><title>ThinkPad T14 Core i5-1135G7 16GB 512GB 59,800円</title></head><body>Core i5-1135G7 16GB SSD 512GB 59,800円</body></html>`;

@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 5
     env:
       BASE_URL: https://choosepc.syouziroupc.workers.dev
+      REQUIRED_UI_REVISION: 2026-08-14-ai-smell-v2
     steps:
       - name: Wait for choosePC production
         shell: bash
@@ -25,12 +26,13 @@ jobs:
             health="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/api/v1/health?smoke=${GITHUB_SHA}" || true)"
             if printf '%s' "$html" | grep -q 'このパソコン、買って大丈夫？' \
               && printf '%s' "$html" | grep -q 'PC ASSIST' \
-              && printf '%s' "$health" | grep -q '"service":"choosePC"'; then
+              && printf '%s' "$health" | grep -q '"service":"choosePC"' \
+              && printf '%s' "$health" | grep -q "\"uiRevision\":\"${REQUIRED_UI_REVISION}\""; then
               printf 'Production route verified on attempt %s.\n' "$attempt"
               printf 'HEALTH=%s\n' "$health"
               exit 0
             fi
             sleep 5
           done
-          echo 'Production route did not serve the concrete PC ASSIST diagnostic UI within the verification window.'
+          printf 'Production route did not serve UI revision %s within the verification window.\n' "$REQUIRED_UI_REVISION"
           exit 1

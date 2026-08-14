@@ -16,6 +16,7 @@ type InspectEnvelope = { extraction?: Extraction; error?: string };
 type BaseFetch = (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response>;
 
 const baseFetch = worker.fetch as unknown as BaseFetch;
+export const UI_REVISION = "2026-08-14-ai-smell-v2";
 
 function extractionCoverage(extraction: Extraction): number {
   const fields: unknown[] = [
@@ -59,12 +60,24 @@ function responseWithBaseHeaders(base: Response, body: unknown): Response {
   const headers = new Headers(base.headers);
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("cache-control", "no-store");
-  return new Response(JSON.stringify(body), { status: 200, headers });
+  return new Response(JSON.stringify(body), { status: base.status, headers });
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/v1/health" && request.method === "GET") {
+      const response = await baseFetch(request, env, ctx);
+      if (!response.ok) return response;
+      try {
+        const payload = await response.clone().json() as Record<string, unknown>;
+        return responseWithBaseHeaders(response, { ...payload, uiRevision: UI_REVISION });
+      } catch {
+        return response;
+      }
+    }
+
     if (url.pathname !== "/api/v1/url/inspect" || request.method !== "POST") {
       return baseFetch(request, env, ctx);
     }
