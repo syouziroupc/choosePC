@@ -69,7 +69,7 @@ export default {
       return baseFetch(request, env, ctx);
     }
 
-    const forwarded = request.clone();
+    const forwarded = request.clone() as unknown as Request;
     const baseResponse = await baseFetch(forwarded, env, ctx);
     if (!baseResponse.ok) return baseResponse;
 
