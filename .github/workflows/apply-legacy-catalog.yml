@@ -1,0 +1,47 @@
+name: apply-legacy-catalog
+
+on:
+  push:
+    branches: [agent/bootstrap-baseline]
+    paths: [.github/workflows/apply-legacy-catalog.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/bootstrap-baseline
+          fetch-depth: 0
+      - name: Wire legacy catalogs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('packages/core/src/catalog.ts')
+          text = path.read_text()
+          if 'intelCore2DesktopCpuData' not in text:
+              anchor = 'import intelMobileCpuData from "../../../knowledge/hardware/cpu/intel-mobile.json";\n'
+              extra = (
+                  'import intelCore2DesktopCpuData from "../../../knowledge/hardware/cpu/intel-core2-desktop.json";\n'
+                  'import intelCore2QuadCpuData from "../../../knowledge/hardware/cpu/intel-core2-quad.json";\n'
+                  'import intelPre4CpuData from "../../../knowledge/hardware/cpu/intel-legacy-1st-3rd-representative.json";\n'
+                  'import amdLegacyCpuData from "../../../knowledge/hardware/cpu/amd-phenom-fx.json";\n'
+              )
+              text = text.replace(anchor, extra + anchor, 1)
+              cpu_anchor = 'export const CPU_CATALOG: HardwareCatalogEntry<CpuCapabilities>[] = withStableIds([\n  ...intelLegacyCpuData,\n'
+              cpu_extra = 'export const CPU_CATALOG: HardwareCatalogEntry<CpuCapabilities>[] = withStableIds([\n  ...intelCore2DesktopCpuData,\n  ...intelCore2QuadCpuData,\n  ...intelPre4CpuData,\n  ...intelLegacyCpuData,\n'
+              text = text.replace(cpu_anchor, cpu_extra, 1)
+              text = text.replace('  ...current2026CpuData,\n  ...amdMobileCpuData,', '  ...current2026CpuData,\n  ...amdLegacyCpuData,\n  ...amdMobileCpuData,', 1)
+              path.write_text(text)
+          PY
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add packages/core/src/catalog.ts
+          git commit -m "data: activate Core 2 and FX runtime coverage"
+          git push origin HEAD:agent/bootstrap-baseline

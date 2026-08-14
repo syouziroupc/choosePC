@@ -1,0 +1,10 @@
+{
+  "id": "gaming_general_v1",
+  "name": "General gaming input model",
+  "category": "gaming",
+  "requirements": {
+    "questions": ["resolution", "target_fps", "ram", "vram"],
+    "note": "Production scoring uses deterministic requirement bands in packages/core/src/presets.ts. Game-specific measured FPS is never invented."
+  },
+  "status": "template-only"
+}

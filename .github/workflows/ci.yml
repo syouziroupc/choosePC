@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit all dependencies
+        run: npm audit --audit-level=high
+      - run: npm run validate:knowledge
+      - name: Validate D1 migrations
+        run: python3 scripts/validate_migrations.py
+      - name: Validate reproducible D1 knowledge seed
+        run: python3 scripts/validate_knowledge_seed.py
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Wrangler deploy dry-run
+        env:
+          MARKET_INGEST_TOKEN: ci-dry-run-placeholder
+          OFFER_INGEST_TOKEN: ci-dry-run-placeholder
+          COMMERCIAL_ADMIN_TOKEN: ci-dry-run-placeholder
+          CONVERSION_IMPORT_TOKEN: ci-dry-run-placeholder
+        run: npx wrangler deploy --dry-run

@@ -1,0 +1,32 @@
+name: refresh-cloudflare-production
+
+on:
+  push:
+    branches: [agent/bootstrap-baseline]
+    paths: [.github/workflows/refresh-cloudflare-production.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/bootstrap-baseline
+          fetch-depth: 0
+      - name: Validate Cloudflare deploy tree
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+          npx wrangler deploy --dry-run
+        env:
+          MARKET_INGEST_TOKEN: ci-dry-run-placeholder
+          OFFER_INGEST_TOKEN: ci-dry-run-placeholder
+          COMMERCIAL_ADMIN_TOKEN: ci-dry-run-placeholder
+          CONVERSION_IMPORT_TOKEN: ci-dry-run-placeholder
+      - name: Publish validated branch
+        run: git push origin HEAD:refs/heads/cloudflare-production --force

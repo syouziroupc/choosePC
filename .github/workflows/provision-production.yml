@@ -1,0 +1,156 @@
+name: provision-production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/bootstrap-baseline
+    paths:
+      - .provision-trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: choosepc-production-provision
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MARKET_INGEST_TOKEN: ${{ secrets.MARKET_INGEST_TOKEN }}
+      OFFER_INGEST_TOKEN: ${{ secrets.OFFER_INGEST_TOKEN }}
+      COMMERCIAL_ADMIN_TOKEN: ${{ secrets.COMMERCIAL_ADMIN_TOKEN }}
+      CONVERSION_IMPORT_TOKEN: ${{ secrets.CONVERSION_IMPORT_TOKEN }}
+      D1_DATABASE_NAME: choosepc-production
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify Cloudflare deployment credentials
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Required GitHub Actions secrets are missing: CLOUDFLARE_API_TOKEN and/or CLOUDFLARE_ACCOUNT_ID"
+            exit 2
+          fi
+
+      - run: npm ci
+      - run: npm run check
+
+      - name: Resolve or create production D1
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 list --json > /tmp/d1-list.json
+          DB_ID="$(node -e 'const fs=require("fs"); const rows=JSON.parse(fs.readFileSync("/tmp/d1-list.json","utf8")); const row=rows.find(x=>x.name===process.env.D1_DATABASE_NAME); process.stdout.write(row?.uuid ?? row?.id ?? "");')"
+          if [ -z "$DB_ID" ]; then
+            npx wrangler d1 create "$D1_DATABASE_NAME" --location apac
+            npx wrangler d1 list --json > /tmp/d1-list.json
+            DB_ID="$(node -e 'const fs=require("fs"); const rows=JSON.parse(fs.readFileSync("/tmp/d1-list.json","utf8")); const row=rows.find(x=>x.name===process.env.D1_DATABASE_NAME); process.stdout.write(row?.uuid ?? row?.id ?? "");')"
+          fi
+          if [ -z "$DB_ID" ]; then
+            echo "Could not resolve D1 database ID after create/list"
+            exit 3
+          fi
+          echo "database_id=$DB_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Bind D1 and declare required Worker secrets
+        env:
+          D1_DATABASE_ID: ${{ steps.d1.outputs.database_id }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'wrangler.jsonc';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.d1_databases = [{
+            binding: 'DB',
+            database_name: process.env.D1_DATABASE_NAME,
+            database_id: process.env.D1_DATABASE_ID,
+            migrations_dir: 'migrations'
+          }];
+          config.secrets = {
+            required: [
+              'MARKET_INGEST_TOKEN',
+              'OFFER_INGEST_TOKEN',
+              'COMMERCIAL_ADMIN_TOKEN',
+              'CONVERSION_IMPORT_TOKEN'
+            ]
+          };
+          fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+          NODE
+
+      - name: Apply remote D1 migrations
+        run: npx wrangler d1 migrations apply "$D1_DATABASE_NAME" --remote
+
+      - name: Build and apply reproducible knowledge seed
+        run: |
+          node scripts/build_knowledge_seed.mjs --git-sha "$GITHUB_SHA" --output /tmp/knowledge-seed.sql
+          npx wrangler d1 execute "$D1_DATABASE_NAME" --remote --file=/tmp/knowledge-seed.sql --yes
+
+      - name: Verify remote D1 schema and seed
+        run: |
+          npx wrangler d1 execute "$D1_DATABASE_NAME" --remote --json --command "PRAGMA foreign_keys; SELECT COUNT(*) AS cpu_count FROM hardware_cpu; SELECT COUNT(*) AS gpu_count FROM hardware_gpu; SELECT COUNT(*) AS collector_source_count FROM collector_sources;" | tee /tmp/d1-verify.json
+          node -e 'const fs=require("fs"); const text=fs.readFileSync("/tmp/d1-verify.json","utf8"); if(!text.includes("cpu_count") || !text.includes("gpu_count") || !text.includes("collector_source_count")) process.exit(1);'
+
+      - name: Verify operational Worker secrets are supplied
+        run: |
+          missing=0
+          for key in MARKET_INGEST_TOKEN OFFER_INGEST_TOKEN COMMERCIAL_ADMIN_TOKEN CONVERSION_IMPORT_TOKEN; do
+            if [ -z "${!key}" ]; then
+              echo "Missing GitHub Actions secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then exit 4; fi
+
+      - name: Prepare ephemeral secrets file
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const names = ['MARKET_INGEST_TOKEN','OFFER_INGEST_TOKEN','COMMERCIAL_ADMIN_TOKEN','CONVERSION_IMPORT_TOKEN'];
+          const data = Object.fromEntries(names.map(name => [name, process.env[name]]));
+          fs.writeFileSync('/tmp/choosepc-secrets.json', JSON.stringify(data), { mode: 0o600 });
+          NODE
+
+      - name: Deploy Worker with required secrets
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --secrets-file /tmp/choosepc-secrets.json 2>&1 | tee /tmp/deploy.log
+          WORKER_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/deploy.log | tail -1 || true)"
+          echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+          rm -f /tmp/choosepc-secrets.json
+
+      - name: Verify deployed health and protected collector status
+        if: steps.deploy.outputs.worker_url != ''
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
+        run: |
+          curl --fail --silent --show-error "$WORKER_URL/api/v1/health" | tee /tmp/health.json
+          node -e 'const fs=require("fs"); const data=JSON.parse(fs.readFileSync("/tmp/health.json","utf8")); if(data.ok!==true || data.service!=="choosePC") process.exit(1);'
+          curl --fail --silent --show-error -H "Authorization: Bearer $OFFER_INGEST_TOKEN" "$WORKER_URL/api/internal/collectors/status" | tee /tmp/collector-status.json
+          node -e 'const fs=require("fs"); const data=JSON.parse(fs.readFileSync("/tmp/collector-status.json","utf8")); if(!Array.isArray(data.sources)) process.exit(1);'
+
+      - name: Persist generated production binding configuration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add wrangler.jsonc
+          if git diff --cached --quiet; then
+            echo "wrangler.jsonc already contains the production binding"
+            exit 0
+          fi
+          git commit -m "chore: bind production D1"
+          git push origin HEAD:agent/bootstrap-baseline

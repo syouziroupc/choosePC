@@ -1,8 +1,0 @@
-{
-  "name": "choosepc-cloudflare-bootstrap",
-  "private": true,
-  "version": "1.0.0",
-  "scripts": {
-    "deploy": "bash deploy.sh"
-  }
-}

@@ -1,0 +1,73 @@
+name: apply-market-history
+
+on:
+  push:
+    branches: [agent/bootstrap-baseline]
+    paths: [.github/workflows/apply-market-history.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/bootstrap-baseline
+          fetch-depth: 0
+      - name: Patch historical market support
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Market store: preserve full signatures and reuse similar historical sales.
+          p = Path('apps/worker/src/market-store.ts')
+          s = p.read_text()
+          if 'signatureSimilarity' not in s:
+              s = s.replace('  estimateMarket,\n  resolveHardware,', '  estimateMarket,\n  resolveHardware,\n  signatureSimilarity,', 1)
+              s = s.replace('  type NormalizedPC,\n}', '  type NormalizedPC,\n  type ProductSignature,\n}', 1)
+              s = s.replace('type ObservationRow = {\n  price_jpy: number;\n  observed_at: string;\n  source: TrustedMarketSource | string;\n};', 'type ObservationRow = {\n  product_signature: string;\n  price_jpy: number;\n  observed_at: string;\n  source: TrustedMarketSource | string;\n  similarity_json: string | null;\n};', 1)
+              s = s.replace('const MAX_SAMPLES = 200;', 'const MAX_SAMPLES = 300;\nconst MAX_CANDIDATE_ROWS = 600;\nconst MIN_SIMILARITY = 0.58;', 1)
+              s = s.replace('    gpuConfidence: pc.gpu?.confidence,\n  });', '    gpuConfidence: pc.gpu?.confidence,\n    gpuVariant: pc.gpu?.variant,\n  });', 1)
+              s = s.replace('    safeJson({\n      signatureQuality: signature.quality,', '    safeJson({\n      signature: { quality: signature.quality, components: signature.components },\n      signatureQuality: signature.quality,', 1)
+              marker = 'export async function lookupStoredMarket'
+              helper = '''function storedSignature(row: ObservationRow, target: ProductSignature): ProductSignature | null {\n  if (row.product_signature === target.key) return target;\n  if (!row.similarity_json) return null;\n  try {\n    const metadata = JSON.parse(row.similarity_json) as { signature?: { quality?: unknown; components?: unknown } };\n    const quality = metadata.signature?.quality;\n    const components = metadata.signature?.components;\n    if (quality !== "exact_model" && quality !== "configuration" && quality !== "partial") return null;\n    if (!components || typeof components !== "object" || Array.isArray(components)) return null;\n    return { key: row.product_signature, quality, components: components as ProductSignature["components"] };\n  } catch {\n    return null;\n  }\n}\n\n'''
+              s = s.replace(marker, helper + marker, 1)
+              start = s.index('export async function lookupStoredMarket')
+              end = s.index('export async function persistMarketEstimate', start)
+              replacement = '''export async function lookupStoredMarket(env: PersistenceEnv, pc: NormalizedPC): Promise<StoredMarketLookup | null> {\n  const db = env.DB;\n  if (!db) return null;\n  const { signature } = resolvedSignature(pc);\n  try {\n    const cutoff = new Date(Date.now() - MAX_LOOKBACK_DAYS * 86_400_000).toISOString();\n    const rows = await db.prepare(`\n      SELECT product_signature, price_jpy, observed_at, source, similarity_json\n      FROM market_observations\n      WHERE condition_type = ? AND observed_at >= ?\n      ORDER BY observed_at DESC\n      LIMIT ?\n    `).bind(pc.condition.type, cutoff, MAX_CANDIDATE_ROWS).all<ObservationRow>();\n\n    const observations: MarketObservationInput[] = [];\n    for (const row of rows.results ?? []) {\n      const candidate = storedSignature(row, signature);\n      if (!candidate) continue;\n      const similarity = signatureSimilarity(signature, candidate);\n      if (similarity < MIN_SIMILARITY) continue;\n      observations.push({\n        priceJpy: row.price_jpy,\n        observedAt: row.observed_at,\n        similarity,\n        sourceConfidence: sourceConfidence(row.source),\n      });\n      if (observations.length >= MAX_SAMPLES) break;\n    }\n    const result = estimateMarket(observations);\n    return {\n      estimate: result.estimate,\n      productSignature: signature.key,\n      signatureQuality: signature.quality,\n      acceptedSamples: result.acceptedSamples,\n      rejectedSamples: result.rejectedSamples,\n    };\n  } catch (error) {\n    console.error(JSON.stringify({ event: "market_lookup_error", error: error instanceof Error ? error.message : String(error) }));\n    return null;\n  }\n}\n\n'''
+              s = s[:start] + replacement + s[end:]
+              s = s.replace('args.engineVersion ?? "market-0.1"', 'args.engineVersion ?? "market-0.2"', 1)
+              p.write_text(s)
+
+          # Recognize Yahoo! Auctions item pages and ended auctions.
+          p = Path('packages/core/src/merchant-parser.ts')
+          s = p.read_text()
+          if 'yahoo-auctions-jp' not in s:
+              anchor = '  {\n    merchant: "メルカリ",\n'
+              profile = '''  {\n    merchant: "Yahoo!オークション",\n    parserName: "yahoo-auctions-jp",\n    hosts: ["auctions.yahoo.co.jp"],\n    titleClasses: ["ProductTitle", "ProductTitle__text", "ItemTitle"],\n    priceClasses: ["Price", "Price__value"],\n    scopeClasses: ["ProductExplanation", "ProductDetail", "Description"],\n  },\n'''
+              s = s.replace(anchor, profile + anchor, 1)
+              s = s.replace('/売り切れ|売切れ|sold\\s*out|売却済み/', '/売り切れ|売切れ|sold\\s*out|売却済み|このオークションは終了|オークションは終了|落札価格/', 1)
+              p.write_text(s)
+
+          # Permit Yahoo! Auctions URLs at the Worker SSRF boundary.
+          p = Path('apps/worker/src/index.ts')
+          s = p.read_text()
+          if '"auctions.yahoo.co.jp"' not in s:
+              s = s.replace('  "shopping.yahoo.co.jp",\n', '  "shopping.yahoo.co.jp",\n  "auctions.yahoo.co.jp",\n', 1)
+              p.write_text(s)
+          PY
+      - name: Validate patched tree
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/worker/src/market-store.ts apps/worker/src/index.ts packages/core/src/merchant-parser.ts
+          git commit -m "feat: use Yahoo Auctions sold history in market estimates"
+          git push origin HEAD:agent/bootstrap-baseline

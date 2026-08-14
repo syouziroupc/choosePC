@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pc-assist.invalid/schemas/normalized-pc.schema.json",
+  "title": "NormalizedPC",
+  "type": "object",
+  "required": ["category", "condition", "commerce", "confidence"],
+  "properties": {
+    "manufacturer": {"type": ["string", "null"]},
+    "model": {"type": ["string", "null"]},
+    "category": {"enum": ["general_laptop", "mobile_laptop", "gaming_laptop", "general_desktop", "gaming_desktop", "bto_desktop", "custom_desktop", "mini_pc", "workstation", "mac"]},
+    "cpu": {
+      "type": ["object", "null"],
+      "properties": {
+        "canonicalId": {"type": ["string", "null"]},
+        "raw": {"type": ["string", "null"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "required": ["confidence"],
+      "additionalProperties": false
+    },
+    "gpu": {
+      "type": ["object", "null"],
+      "properties": {
+        "canonicalId": {"type": ["string", "null"]},
+        "raw": {"type": ["string", "null"]},
+        "variant": {"enum": ["desktop", "laptop", "integrated", "unknown"]},
+        "tgpW": {"type": ["number", "null"], "minimum": 0},
+        "vramGb": {"type": ["number", "null"], "minimum": 0},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "required": ["confidence"],
+      "additionalProperties": false
+    },
+    "memory": {
+      "type": ["object", "null"],
+      "properties": {
+        "sizeGb": {"type": ["number", "null"], "minimum": 0},
+        "type": {"type": ["string", "null"]},
+        "channels": {"type": ["integer", "null"], "minimum": 1},
+        "upgradeable": {"type": ["boolean", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "storage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": {"enum": ["nvme_ssd", "sata_ssd", "hdd", "emmc", "unknown"]},
+          "sizeGb": {"type": ["number", "null"], "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "display": {
+      "type": ["object", "null"],
+      "properties": {
+        "sizeInch": {"type": ["number", "null"], "minimum": 0},
+        "width": {"type": ["integer", "null"], "minimum": 1},
+        "height": {"type": ["integer", "null"], "minimum": 1},
+        "refreshHz": {"type": ["number", "null"], "minimum": 1},
+        "vrr": {"type": ["boolean", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "mobility": {
+      "type": ["object", "null"],
+      "properties": {
+        "weightKg": {"type": ["number", "null"], "minimum": 0},
+        "batteryWh": {"type": ["number", "null"], "minimum": 0},
+        "adapterW": {"type": ["number", "null"], "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "condition": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {"enum": ["new", "used", "refurbished", "unknown"]},
+        "grade": {"type": ["string", "null"]},
+        "batteryHealthPct": {"type": ["number", "null"], "minimum": 0, "maximum": 100}
+      },
+      "additionalProperties": false
+    },
+    "commerce": {
+      "type": "object",
+      "properties": {
+        "priceJpy": {"type": ["integer", "null"], "minimum": 0},
+        "seller": {"type": ["string", "null"]},
+        "warrantyDays": {"type": ["integer", "null"], "minimum": 0},
+        "sourceUrl": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "confidence": {"type": "object", "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}},
+    "extra": {"type": "object"}
+  },
+  "additionalProperties": false
+}
