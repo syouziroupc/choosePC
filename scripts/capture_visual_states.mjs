@@ -239,7 +239,7 @@ async function captureState({ name, width, height, mockOffers }) {
     if (diagnostics.bodyScrollWidth > diagnostics.viewportWidth + 1) throw new Error(`${name}: horizontal overflow ${JSON.stringify(diagnostics)}`);
     if (mockOffers && diagnostics.offerRows !== 3) throw new Error(`${name}: missing mocked offers ${JSON.stringify(diagnostics)}`);
     if (mockOffers && diagnostics.disclosureCount !== 2) throw new Error(`${name}: disclosure rendering mismatch ${JSON.stringify(diagnostics)}`);
-    if (!mockOffers && !String(diagnostics.notice ?? "").includes("販売候補は登録されていません")) throw new Error(`${name}: empty-state notice mismatch ${JSON.stringify(diagnostics)}`);
+    if (!mockOffers && !String(diagnostics.notice ?? "").includes("販売商品は現在登録されていません")) throw new Error(`${name}: empty-state notice mismatch ${JSON.stringify(diagnostics)}`);
     console.log(`${name}: ${JSON.stringify(diagnostics)}`);
   } finally {
     client.close();
@@ -249,9 +249,9 @@ async function captureState({ name, width, height, mockOffers }) {
 
 try {
   await waitForDebugEndpoint();
-  await captureState({ name: "purchase-empty-desktop", width: 1440, height: 1200, mockOffers: false });
+  await captureState({ name: "purchase-empty-desktop", width: 1920, height: 1200, mockOffers: false });
   await captureState({ name: "purchase-empty-mobile", width: 390, height: 900, mockOffers: false });
-  await captureState({ name: "purchase-offers-desktop", width: 1440, height: 1200, mockOffers: true });
+  await captureState({ name: "purchase-offers-desktop", width: 1920, height: 1200, mockOffers: true });
   await captureState({ name: "purchase-offers-mobile", width: 390, height: 900, mockOffers: true });
 } finally {
   chrome.kill("SIGTERM");
