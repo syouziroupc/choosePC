@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 5
     env:
       BASE_URL: https://choosepc.syouziroupc.workers.dev
-      REQUIRED_UI_REVISION: 2026-08-14-ai-smell-v2
+      REQUIRED_UI_REVISION: 2026-08-15-reference-ui-v1
     steps:
       - name: Wait for choosePC production
         shell: bash
