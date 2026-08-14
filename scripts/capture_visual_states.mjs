@@ -167,6 +167,8 @@ async function captureState({ name, width, height, validResult }) {
     const diagnostics = await evaluate(client, `(() => {
       const score = document.querySelector('.result-score');
       const offer = document.querySelector('.offer-section');
+      const reason = document.querySelector('.reason-grid');
+      const next = document.querySelector('.next-actions');
       const text = document.body.innerText;
       return {
         bodyScrollWidth: document.body.scrollWidth,
@@ -174,6 +176,8 @@ async function captureState({ name, width, height, validResult }) {
         neutral: Boolean(document.querySelector('.result-banner.neutral')),
         scoreVisible: Boolean(score && getComputedStyle(score).display !== 'none' && score.getBoundingClientRect().height > 0),
         offerVisible: Boolean(offer && getComputedStyle(offer).display !== 'none' && offer.getBoundingClientRect().height > 0),
+        reasonVisible: Boolean(reason && getComputedStyle(reason).display !== 'none' && reason.getBoundingClientRect().height > 0),
+        nextVisible: Boolean(next && getComputedStyle(next).display !== 'none' && next.getBoundingClientRect().height > 0),
         offerRows: document.querySelectorAll('.offer-row').length,
         hasRawOfferScores: /総合\\s+\\d+点|用途\\s+\\d+点|価格\\s+\\d+点/.test(text),
       };
@@ -184,6 +188,8 @@ async function captureState({ name, width, height, validResult }) {
       if (!diagnostics.neutral) throw new Error(`${name}: expected insufficient-data result ${JSON.stringify(diagnostics)}`);
       if (diagnostics.scoreVisible) throw new Error(`${name}: insufficient-data score must be hidden ${JSON.stringify(diagnostics)}`);
       if (diagnostics.offerVisible) throw new Error(`${name}: offers must be hidden while result is insufficient ${JSON.stringify(diagnostics)}`);
+      if (diagnostics.reasonVisible) throw new Error(`${name}: positive/caution blocks must be hidden while result is insufficient ${JSON.stringify(diagnostics)}`);
+      if (diagnostics.nextVisible) throw new Error(`${name}: purchase actions must be hidden while result is insufficient ${JSON.stringify(diagnostics)}`);
     } else {
       if (diagnostics.neutral) throw new Error(`${name}: valid mocked result rendered neutral ${JSON.stringify(diagnostics)}`);
       if (!diagnostics.offerVisible || diagnostics.offerRows !== 3) throw new Error(`${name}: valid offer comparison missing ${JSON.stringify(diagnostics)}`);
