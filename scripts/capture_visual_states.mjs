@@ -185,8 +185,8 @@ async function preparePurchaseFlow(client, mockOffers) {
   if (mockOffers) await client.send("Page.addScriptToEvaluateOnNewDocument", { source: mockScript });
   await client.send("Page.navigate", { url: baseUrl });
   await waitFor(client, "document.readyState === 'complete' || document.readyState === 'interactive'", "page load");
-  await waitFor(client, "[...document.querySelectorAll('button')].some(b => b.textContent?.includes('スペック入力'))", "manual input button");
-  await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent?.includes('スペック入力')).click()`);
+  await waitFor(client, "[...document.querySelectorAll('.mode-switch button')].some(b => b.textContent?.includes('スペックから'))", "manual input button");
+  await evaluate(client, `[...document.querySelectorAll('.mode-switch button')].find(b => b.textContent?.includes('スペックから')).click()`);
   await waitFor(client, "document.querySelector('form.spec-form')", "manual PC form");
   await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent?.includes('このPCを判定')).click()`);
   await waitFor(client, "document.querySelector('#result')", "purchase result", 15000);

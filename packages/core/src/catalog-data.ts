@@ -14,9 +14,11 @@ import apple from "../../../knowledge/hardware/cpu/apple-silicon.json";
 import workstationCpu from "../../../knowledge/hardware/cpu/workstation.json";
 import integrated from "../../../knowledge/hardware/gpu/integrated.json";
 import integrated2026 from "../../../knowledge/hardware/gpu/integrated-2026.json";
+import nvidiaLegacyDesktop from "../../../knowledge/hardware/gpu/nvidia-legacy-desktop.json";
 import nvidiaDesktop from "../../../knowledge/hardware/gpu/nvidia-desktop.json";
 import nvidiaLaptop from "../../../knowledge/hardware/gpu/nvidia-laptop.json";
 import nvidiaMainstreamLaptop from "../../../knowledge/hardware/gpu/nvidia-mainstream-laptop.json";
+import amdLegacyDesktop from "../../../knowledge/hardware/gpu/amd-legacy-desktop.json";
 import amdRadeon from "../../../knowledge/hardware/gpu/amd-radeon.json";
 import amdRadeonLaptop from "../../../knowledge/hardware/gpu/amd-radeon-laptop.json";
 import intelArc from "../../../knowledge/hardware/gpu/intel-arc.json";
@@ -29,6 +31,7 @@ export const CPU_CATALOG_DATA = [
 ];
 
 export const GPU_CATALOG_DATA = [
-  ...integrated, ...integrated2026, ...nvidiaMainstreamLaptop, ...nvidiaDesktop,
-  ...nvidiaLaptop, ...amdRadeon, ...amdRadeonLaptop, ...intelArc, ...workstationGpu,
+  ...integrated, ...integrated2026, ...nvidiaMainstreamLaptop, ...nvidiaLegacyDesktop,
+  ...nvidiaDesktop, ...nvidiaLaptop, ...amdLegacyDesktop, ...amdRadeon, ...amdRadeonLaptop,
+  ...intelArc, ...workstationGpu,
 ];

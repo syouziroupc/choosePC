@@ -58,6 +58,19 @@ jobs:
           test -s visual-artifacts/purchase-empty-mobile.png
           test -s visual-artifacts/purchase-offers-desktop.png
           test -s visual-artifacts/purchase-offers-mobile.png
+      - name: Exercise GPU catalog suggestion states
+        env:
+          VISUAL_BASE_URL: http://127.0.0.1:5173/
+          VISUAL_OUTPUT_DIR: visual-artifacts
+        run: |
+          export CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$CHROME" ]; then
+            echo "No Chrome/Chromium executable on runner"
+            exit 1
+          fi
+          node scripts/capture_catalog_suggest.mjs
+          test -s visual-artifacts/suggest-gtx680-desktop.png
+          test -s visual-artifacts/suggest-gtx680-mobile.png
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
         with:
