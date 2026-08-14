@@ -1,0 +1,5 @@
+.engine-note{display:none}
+
+@media(max-width:720px){
+  .page-title-row h1{font-size:26px;line-height:1.4}
+}
