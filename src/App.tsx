@@ -8,7 +8,6 @@ type Mode = "url" | "manual";
 type StockState = "in_stock" | "low_stock" | "out_of_stock" | "sold" | "unavailable" | "unknown";
 type EvaluationResult = {
   scores: { hardware: number; fit: number; value: number; condition: number; longevity: number; risk: number; confidence: number; overall: number };
-  scoreBreakdown?: { components: Array<{ key: string; status: string; score: number; coverage: number; earnedPoints: number; maxPoints: number }> };
   decision: string;
   warnings: string[];
   reasonDetails: Array<{ code: string; kind: string; message: string }>;
@@ -142,12 +141,12 @@ const saleText: Record<SaleAssessment["decision"], string> = {
 };
 
 const scoreLabels: Array<[keyof EvaluationResult["scores"], string]> = [
-  ["fit", "用途適合（総合30点）"],
-  ["hardware", "基本性能（総合25点）"],
-  ["value", "価格妥当性（総合20点）"],
-  ["condition", "状態・保証（総合10点）"],
-  ["longevity", "将来性（総合15点）"],
-  ["confidence", "判定確度（総合点外）"],
+  ["fit", "用途に足りるか"],
+  ["hardware", "CPU・GPUなどの構成"],
+  ["value", "販売価格"],
+  ["condition", "中古状態"],
+  ["longevity", "今後も使えるか"],
+  ["confidence", "判定に使えた情報量"],
 ];
 
 function numberOrNull(value: string): number | null {
@@ -584,7 +583,7 @@ function PurchaseResult({ result, positives, concerns, form }: { result: Evaluat
   return <section id="result" className="result-section" aria-labelledby="purchase-result-heading">
     <div className={`result-banner ${decisionTone(result.decision)}`}>
       <div><p>購入判定</p><h2 id="purchase-result-heading">{copy[0]}</h2><span>{copy[1]}</span></div>
-      <div className="result-score"><strong>{result.scores.overall.toFixed(1)}</strong><span>/100</span><small>総合点</small></div>
+      <div className="result-score"><strong>{Math.round(result.scores.overall)}</strong><span>/100</span><small>総合点</small></div>
     </div>
     {result.decision === "insufficient_data" && missing.length > 0 && <div className="missing-data"><strong>追加すると判定しやすい項目</strong><span>{missing.join(" / ")}</span></div>}
     <ScoreTable result={result} />
@@ -640,12 +639,9 @@ function ScoreTable({ result }: { result: EvaluationResult }) {
   return <div className="score-table" role="table" aria-label="判定内訳">
     <div className="score-header" role="row"><span role="columnheader">判定項目</span><span role="columnheader">点数</span><span role="columnheader">目安</span></div>
     {scoreLabels.map(([key, label]) => {
-      const value = result.scores[key];
-      const componentKey = key === "hardware" ? "performance" : key === "value" ? "price" : key;
-      const breakdown = result.scoreBreakdown?.components.find((item) => item.key === componentKey);
-      const unavailable = breakdown?.status === "unavailable";
-      return <div className="score-row" role="row" key={key}><span role="cell">{label}</span><strong role="cell">{unavailable ? "相場なし" : `${value.toFixed(1)} / 100`}</strong><div role="cell" className="meter"><i style={{ width: `${unavailable ? 0 : Math.round(value)}%` }} /></div></div>;
+      const value = Math.round(result.scores[key]);
+      return <div className="score-row" role="row" key={key}><span role="cell">{label}</span><strong role="cell">{value}</strong><div role="cell" className="meter"><i style={{ width: `${value}%` }} /></div></div>;
     })}
-    <div className="score-row risk" role="row"><span role="cell">リスク（低いほど良い）</span><strong role="cell">{result.scores.risk.toFixed(1)} / 100</strong><div role="cell" className="meter"><i style={{ width: `${Math.round(result.scores.risk)}%` }} /></div></div>
+    <div className="score-row risk" role="row"><span role="cell">リスク</span><strong role="cell">{Math.round(result.scores.risk)}</strong><div role="cell" className="meter"><i style={{ width: `${Math.round(result.scores.risk)}%` }} /></div></div>
   </div>;
 }

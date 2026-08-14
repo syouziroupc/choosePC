@@ -114,17 +114,6 @@ const evaluationMock = {
   },
 };
 
-const insufficientEvaluationMock = {
-  result: {
-    scores: { hardware: 50, fit: 45, value: 50, condition: 60, longevity: 50, risk: 8, confidence: 5, overall: 40 },
-    decision: "insufficient_data",
-    warnings: ["CPUの総合性能を確認できません。"],
-    reasonDetails: [],
-    engineVersion: "visual-test",
-    knowledgeVersion: "visual-test",
-  },
-};
-
 const offerMock = {
   ranked: [
     { rank: 1, candidateId: "offer-own", result: { decision: "buy", scores: { overall: 88, fit: 92, value: 86, confidence: 84, risk: 18 } } },
@@ -139,9 +128,9 @@ const offerMock = {
   search: { scannedRows: 12, skippedRows: 2, candidateCount: 3 },
 };
 
-function mockScript(evaluation) { return `(() => {
+const mockScript = `(() => {
   const originalFetch = window.fetch.bind(window);
-  const evaluation = ${JSON.stringify(evaluation)};
+  const evaluation = ${JSON.stringify(evaluationMock)};
   const offers = ${JSON.stringify(offerMock)};
   window.fetch = async (input, init) => {
     const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -150,10 +139,10 @@ function mockScript(evaluation) { return `(() => {
     if (url.pathname === '/api/v1/offers/recommend') return new Response(JSON.stringify(offers), { status: 200, headers: { 'content-type': 'application/json' } });
     return originalFetch(input, init);
   };
-})();`; }
+})();`;
 
 async function prepareManualResult(client, validResult) {
-  await client.send("Page.addScriptToEvaluateOnNewDocument", { source: mockScript(validResult ? evaluationMock : insufficientEvaluationMock) });
+  if (validResult) await client.send("Page.addScriptToEvaluateOnNewDocument", { source: mockScript });
   await client.send("Page.navigate", { url: baseUrl });
   await waitFor(client, "document.readyState === 'complete' || document.readyState === 'interactive'", "page load");
   await waitFor(client, "[...document.querySelectorAll('.mode-switch button')].some(b => b.textContent?.includes('スペックから'))", "manual input button");
