@@ -12,17 +12,18 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
-      - name: Inspect live route
+      - name: Inspect live routes
         shell: bash
         run: |
           set +e
-          BASE='https://choosepc.syouziroupc.workers.dev'
-          echo '=== HEALTH ==='
-          curl -i -sS -L --max-time 15 -H 'Cache-Control: no-cache' "$BASE/api/v1/health?sha=${GITHUB_SHA}"
-          echo
-          echo '=== HOME ==='
-          curl -i -sS -L --max-time 15 -H 'Cache-Control: no-cache' "$BASE/?sha=${GITHUB_SHA}" | head -c 5000
-          echo
+          for BASE in 'https://choosepc.szpc.jp' 'https://choosepc.syouziroupc.workers.dev'; do
+            echo "=== $BASE HEALTH ==="
+            curl -i -sS -L --max-time 15 -H 'Cache-Control: no-cache' "$BASE/api/v1/health?sha=${GITHUB_SHA}"
+            echo
+            echo "=== $BASE HOME ==="
+            curl -i -sS -L --max-time 15 -H 'Cache-Control: no-cache' "$BASE/?sha=${GITHUB_SHA}" | head -c 5000
+            echo
+          done
           exit 0
