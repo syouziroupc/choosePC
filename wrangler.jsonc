@@ -3,7 +3,7 @@
   "name": "choosepc",
   "main": "./apps/worker/src/production-entry.ts",
   "compatibility_date": "2026-07-29",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": true,
   "assets": {
     "not_found_handling": "single-page-application",
