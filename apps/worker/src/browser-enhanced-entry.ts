@@ -16,7 +16,7 @@ type InspectEnvelope = { extraction?: Extraction; error?: string };
 type BaseFetch = (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response>;
 
 const baseFetch = worker.fetch as unknown as BaseFetch;
-export const UI_REVISION = "2026-08-14-ai-smell-v2";
+export const UI_REVISION = "2026-08-15-reference-ui-v1";
 
 function extractionCoverage(extraction: Extraction): number {
   const fields: unknown[] = [
