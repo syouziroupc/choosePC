@@ -17,6 +17,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -26,6 +29,19 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      - name: Verify Cloudflare deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Missing repository secret: CLOUDFLARE_API_TOKEN"
+            exit 2
+          fi
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "Missing repository secret: CLOUDFLARE_ACCOUNT_ID"
+            exit 2
+          fi
 
       - name: Install dependencies
         run: npm ci
@@ -45,8 +61,4 @@ jobs:
           test -f dist/choosepc/wrangler.json
 
       - name: Deploy
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+        run: npx wrangler deploy
