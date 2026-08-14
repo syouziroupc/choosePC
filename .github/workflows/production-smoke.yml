@@ -12,29 +12,28 @@ permissions:
 jobs:
   verify-production:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     env:
       BASE_URL: https://choosepc.syouziroupc.workers.dev
     steps:
-      - name: Wait for current production deployment
+      - name: Inspect production route
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 36); do
-            html="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/?smoke=${GITHUB_SHA}" || true)"
-            health="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/api/v1/health?smoke=${GITHUB_SHA}" || true)"
-            if printf '%s' "$html" | grep -q 'PC ASSIST' && printf '%s' "$health" | grep -q '"service":"choosePC"'; then
-              printf '%s\n' "$html" | head -c 1000
-              printf '\nHEALTH=%s\n' "$health"
-              exit 0
-            fi
-            echo "Production not current yet (attempt $attempt)."
-            sleep 5
-          done
-          echo 'Production route did not serve the current choosePC application.'
-          echo 'HOME:'
-          curl --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/?diagnostic=${GITHUB_SHA}" | head -c 3000 || true
+          echo '=== HOME HEADERS ==='
+          curl --silent --show-error --location --max-time 15 -D - -o /tmp/home.html -H 'Cache-Control: no-cache' "$BASE_URL/?diagnostic=${GITHUB_SHA}" || true
+          echo '=== HOME BODY ==='
+          head -c 3000 /tmp/home.html || true
           echo
-          echo 'HEALTH:'
-          curl --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/api/v1/health?diagnostic=${GITHUB_SHA}" | head -c 3000 || true
-          exit 1
+          echo '=== HEALTH HEADERS ==='
+          curl --silent --show-error --location --max-time 15 -D - -o /tmp/health.txt -H 'Cache-Control: no-cache' "$BASE_URL/api/v1/health?diagnostic=${GITHUB_SHA}" || true
+          echo '=== HEALTH BODY ==='
+          head -c 3000 /tmp/health.txt || true
+          echo
+
+      - name: Verify current choosePC production
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'PC ASSIST' /tmp/home.html
+          grep -q '"service":"choosePC"' /tmp/health.txt
