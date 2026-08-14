@@ -1,0 +1,28 @@
+name: route-diagnostic
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Inspect live route
+        shell: bash
+        run: |
+          set +e
+          BASE='https://choosepc.syouziroupc.workers.dev'
+          echo '=== HEALTH ==='
+          curl -i -sS -L --max-time 15 -H 'Cache-Control: no-cache' "$BASE/api/v1/health?sha=${GITHUB_SHA}"
+          echo
+          echo '=== HOME ==='
+          curl -i -sS -L --max-time 15 -H 'Cache-Control: no-cache' "$BASE/?sha=${GITHUB_SHA}" | head -c 5000
+          echo
+          exit 0
