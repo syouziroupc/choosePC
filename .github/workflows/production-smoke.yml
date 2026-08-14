@@ -23,12 +23,14 @@ jobs:
           for attempt in $(seq 1 48); do
             html="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/?smoke=${GITHUB_SHA}" || true)"
             health="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/api/v1/health?smoke=${GITHUB_SHA}" || true)"
-            if printf '%s' "$html" | grep -q 'PC ASSIST' && printf '%s' "$health" | grep -q '"service":"choosePC"'; then
+            if printf '%s' "$html" | grep -q '買ってから後悔する前に' \
+              && printf '%s' "$html" | grep -q 'PC ASSIST' \
+              && printf '%s' "$health" | grep -q '"service":"choosePC"'; then
               printf 'Production route verified on attempt %s.\n' "$attempt"
               printf 'HEALTH=%s\n' "$health"
               exit 0
             fi
             sleep 5
           done
-          echo 'Production route did not serve choosePC within the verification window.'
+          echo 'Production route did not serve the redesigned choosePC within the verification window.'
           exit 1
