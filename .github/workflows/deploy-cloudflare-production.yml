@@ -1,14 +1,7 @@
-name: Deploy choosePC main branch
+name: Deploy choosePC manually
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-
-concurrency:
-  group: choosepc-main
-  cancel-in-progress: false
 
 permissions:
   contents: read
