@@ -40,7 +40,6 @@ class CdpClient {
     this.socket = new WebSocket(url);
     this.nextId = 1;
     this.pending = new Map();
-    this.events = [];
   }
 
   async connect() {
@@ -50,15 +49,12 @@ class CdpClient {
     });
     this.socket.addEventListener("message", (event) => {
       const message = JSON.parse(String(event.data));
-      if (message.id) {
-        const pending = this.pending.get(message.id);
-        if (!pending) return;
-        this.pending.delete(message.id);
-        if (message.error) pending.reject(new Error(message.error.message));
-        else pending.resolve(message.result ?? {});
-        return;
-      }
-      this.events.push(message);
+      if (!message.id) return;
+      const pending = this.pending.get(message.id);
+      if (!pending) return;
+      this.pending.delete(message.id);
+      if (message.error) pending.reject(new Error(message.error.message));
+      else pending.resolve(message.result ?? {});
     });
   }
 
@@ -70,9 +66,7 @@ class CdpClient {
     });
   }
 
-  close() {
-    this.socket.close();
-  }
+  close() { this.socket.close(); }
 }
 
 async function createPage() {
@@ -91,11 +85,7 @@ async function closeTarget(targetId) {
 }
 
 async function evaluate(client, expression) {
-  const result = await client.send("Runtime.evaluate", {
-    expression,
-    awaitPromise: true,
-    returnByValue: true,
-  });
+  const result = await client.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
   if (result.exceptionDetails) throw new Error(result.exceptionDetails.text ?? "Runtime evaluation failed");
   return result.result?.value;
 }
@@ -109,80 +99,50 @@ async function waitFor(client, expression, message, timeoutMs = 12000) {
   throw new Error(`Timed out waiting for ${message}`);
 }
 
+const evaluationMock = {
+  result: {
+    scores: { hardware: 84, fit: 91, value: 72, condition: 76, longevity: 81, risk: 18, confidence: 88, overall: 82 },
+    decision: "buy",
+    warnings: ["販売価格は近い相場と比較して最終確認してください。"],
+    reasonDetails: [
+      { code: "preferred:cpuGeneral", kind: "positive", message: "CPUの総合性能はこの用途の推奨目安を満たしています" },
+      { code: "preferred:ramGb", kind: "positive", message: "メモリ容量はこの用途の推奨目安を満たしています" },
+      { code: "value:check", kind: "warning", message: "価格は近い構成と比較して確認してください" },
+    ],
+    engineVersion: "visual-test",
+    knowledgeVersion: "visual-test",
+  },
+};
+
 const offerMock = {
   ranked: [
-    {
-      rank: 1,
-      candidateId: "offer-own",
-      result: { decision: "buy", scores: { overall: 88, fit: 92, value: 86, confidence: 84, risk: 18 } },
-    },
-    {
-      rank: 2,
-      candidateId: "offer-affiliate",
-      result: { decision: "fair", scores: { overall: 81, fit: 87, value: 78, confidence: 82, risk: 24 } },
-    },
-    {
-      rank: 3,
-      candidateId: "offer-normal",
-      result: { decision: "fair", scores: { overall: 76, fit: 82, value: 74, confidence: 79, risk: 29 } },
-    },
+    { rank: 1, candidateId: "offer-own", result: { decision: "buy", scores: { overall: 88, fit: 92, value: 86, confidence: 84, risk: 18 } } },
+    { rank: 2, candidateId: "offer-affiliate", result: { decision: "fair", scores: { overall: 81, fit: 87, value: 78, confidence: 82, risk: 24 } } },
+    { rank: 3, candidateId: "offer-normal", result: { decision: "fair", scores: { overall: 76, fit: 82, value: 74, confidence: 79, risk: 29 } } },
   ],
   commercialOffers: [
-    {
-      offerId: "offer-own",
-      rank: 1,
-      evaluationScore: 88,
-      merchant: "正二郎商事",
-      title: "Let's note CF-SV8 / Core i5 / 8GB / SSD 256GB",
-      priceJpy: 27800,
-      merchantType: "own",
-      disclosureRequired: true,
-      disclosureText: "自社取扱商品です。評価・順位は取扱関係とは独立して計算しています。",
-      outboundPath: "/api/v1/outbound/offer-own",
-    },
-    {
-      offerId: "offer-affiliate",
-      rank: 2,
-      evaluationScore: 81,
-      merchant: "Example PC Shop",
-      title: "13.3型モバイルノート / Core i5 / 16GB / SSD 512GB",
-      priceJpy: 34800,
-      merchantType: "affiliate",
-      disclosureRequired: true,
-      disclosureText: "このリンクから購入された場合、紹介料を受け取ることがあります。",
-      outboundPath: "/api/v1/outbound/offer-affiliate",
-    },
-    {
-      offerId: "offer-normal",
-      rank: 3,
-      evaluationScore: 76,
-      merchant: "Neutral Market",
-      title: "中古モバイルノート / Core i5 / 8GB / SSD 256GB",
-      priceJpy: 25800,
-      merchantType: "normal",
-      disclosureRequired: false,
-      disclosureText: null,
-      outboundPath: "/api/v1/outbound/offer-normal",
-    },
+    { offerId: "offer-own", rank: 1, evaluationScore: 88, merchant: "正二郎商事", title: "Let's note CF-SV8 / Core i5 / 8GB / SSD 256GB", priceJpy: 27800, merchantType: "own", disclosureRequired: true, disclosureText: "自社取扱商品です。評価は取扱関係とは独立して計算しています。", outboundPath: "/api/v1/outbound/offer-own" },
+    { offerId: "offer-affiliate", rank: 2, evaluationScore: 81, merchant: "Example PC Shop", title: "13.3型モバイルノート / Core i5 / 16GB / SSD 512GB", priceJpy: 34800, merchantType: "affiliate", disclosureRequired: true, disclosureText: "このリンクから購入された場合、紹介料を受け取ることがあります。", outboundPath: "/api/v1/outbound/offer-affiliate" },
+    { offerId: "offer-normal", rank: 3, evaluationScore: 76, merchant: "Neutral Market", title: "中古モバイルノート / Core i5 / 8GB / SSD 256GB", priceJpy: 25800, merchantType: "normal", disclosureRequired: false, disclosureText: null, outboundPath: "/api/v1/outbound/offer-normal" },
   ],
   search: { scannedRows: 12, skippedRows: 2, candidateCount: 3 },
 };
 
 const mockScript = `(() => {
   const originalFetch = window.fetch.bind(window);
-  const mock = ${JSON.stringify(offerMock)};
+  const evaluation = ${JSON.stringify(evaluationMock)};
+  const offers = ${JSON.stringify(offerMock)};
   window.fetch = async (input, init) => {
     const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw, location.href);
-    if (url.pathname === '/api/v1/offers/recommend') {
-      return new Response(JSON.stringify(mock), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
+    if (url.pathname === '/api/v1/evaluate') return new Response(JSON.stringify(evaluation), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (url.pathname === '/api/v1/offers/recommend') return new Response(JSON.stringify(offers), { status: 200, headers: { 'content-type': 'application/json' } });
     return originalFetch(input, init);
   };
 })();`;
 
-async function preparePurchaseFlow(client, mockOffers) {
-  if (mockOffers) await client.send("Page.addScriptToEvaluateOnNewDocument", { source: mockScript });
+async function prepareManualResult(client, validResult) {
+  if (validResult) await client.send("Page.addScriptToEvaluateOnNewDocument", { source: mockScript });
   await client.send("Page.navigate", { url: baseUrl });
   await waitFor(client, "document.readyState === 'complete' || document.readyState === 'interactive'", "page load");
   await waitFor(client, "[...document.querySelectorAll('.mode-switch button')].some(b => b.textContent?.includes('スペックから'))", "manual input button");
@@ -190,56 +150,59 @@ async function preparePurchaseFlow(client, mockOffers) {
   await waitFor(client, "document.querySelector('form.spec-form')", "manual PC form");
   await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent?.includes('このPCを判定')).click()`);
   await waitFor(client, "document.querySelector('#result')", "purchase result", 15000);
-  await waitFor(client, "[...document.querySelectorAll('button')].some(b => b.textContent?.includes('販売候補を探す'))", "offer search button");
-  await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent?.includes('販売候補を探す')).click()`);
-  if (mockOffers) {
-    await waitFor(client, "document.querySelectorAll('.offer-row').length === 3", "ranked offer rows");
-  } else {
-    await waitFor(client, "document.querySelector('.offer-section .notice')", "empty offer notice");
+  if (validResult) {
+    await waitFor(client, "[...document.querySelectorAll('button')].some(b => b.textContent?.includes('販売候補を探す'))", "offer search button");
+    await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent?.includes('販売候補を探す')).click()`);
+    await waitFor(client, "document.querySelectorAll('.offer-row').length === 3", "offer rows");
   }
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await new Promise((resolve) => setTimeout(resolve, 250));
 }
 
-async function captureState({ name, width, height, mockOffers }) {
+async function captureState({ name, width, height, validResult }) {
   const { client, targetId } = await createPage();
   try {
-    await client.send("Emulation.setDeviceMetricsOverride", {
-      width,
-      height,
-      deviceScaleFactor: 1,
-      mobile: width <= 500,
-      screenWidth: width,
-      screenHeight: height,
-    });
-    await preparePurchaseFlow(client, mockOffers);
+    await client.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width <= 500, screenWidth: width, screenHeight: height });
+    await prepareManualResult(client, validResult);
+
+    const diagnostics = await evaluate(client, `(() => {
+      const score = document.querySelector('.result-score');
+      const offer = document.querySelector('.offer-section');
+      const text = document.body.innerText;
+      return {
+        bodyScrollWidth: document.body.scrollWidth,
+        viewportWidth: document.documentElement.clientWidth,
+        neutral: Boolean(document.querySelector('.result-banner.neutral')),
+        scoreVisible: Boolean(score && getComputedStyle(score).display !== 'none' && score.getBoundingClientRect().height > 0),
+        offerVisible: Boolean(offer && getComputedStyle(offer).display !== 'none' && offer.getBoundingClientRect().height > 0),
+        offerRows: document.querySelectorAll('.offer-row').length,
+        hasRawOfferScores: /総合\\s+\\d+点|用途\\s+\\d+点|価格\\s+\\d+点/.test(text),
+      };
+    })()`);
+
+    if (diagnostics.bodyScrollWidth > diagnostics.viewportWidth + 1) throw new Error(`${name}: horizontal overflow ${JSON.stringify(diagnostics)}`);
+    if (!validResult) {
+      if (!diagnostics.neutral) throw new Error(`${name}: expected insufficient-data result ${JSON.stringify(diagnostics)}`);
+      if (diagnostics.scoreVisible) throw new Error(`${name}: insufficient-data score must be hidden ${JSON.stringify(diagnostics)}`);
+      if (diagnostics.offerVisible) throw new Error(`${name}: offers must be hidden while result is insufficient ${JSON.stringify(diagnostics)}`);
+    } else {
+      if (diagnostics.neutral) throw new Error(`${name}: valid mocked result rendered neutral ${JSON.stringify(diagnostics)}`);
+      if (!diagnostics.offerVisible || diagnostics.offerRows !== 3) throw new Error(`${name}: valid offer comparison missing ${JSON.stringify(diagnostics)}`);
+      if (diagnostics.hasRawOfferScores) throw new Error(`${name}: raw numeric recommendation scores reappeared ${JSON.stringify(diagnostics)}`);
+    }
+
     const clip = await evaluate(client, `(() => {
       const start = document.querySelector('#result');
       const end = document.querySelector('#principle');
-      if (!start || !end) return null;
-      const top = Math.max(0, window.scrollY + start.getBoundingClientRect().top - 24);
-      const bottom = window.scrollY + end.getBoundingClientRect().top + Math.min(end.getBoundingClientRect().height, 280);
-      return { x: 0, y: top, width: document.documentElement.clientWidth, height: Math.max(600, bottom - top) };
+      if (!start) return null;
+      const top = Math.max(0, window.scrollY + start.getBoundingClientRect().top - 20);
+      const fallbackBottom = top + ${height};
+      const endTop = end ? window.scrollY + end.getBoundingClientRect().top : fallbackBottom;
+      const bottom = Math.min(endTop + 180, top + 1800);
+      return { x: 0, y: top, width: document.documentElement.clientWidth, height: Math.max(520, bottom - top) };
     })()`);
-    if (!clip) throw new Error("Could not calculate screenshot clip");
-    const screenshot = await client.send("Page.captureScreenshot", {
-      format: "png",
-      captureBeyondViewport: true,
-      clip: { ...clip, scale: 1 },
-    });
+    if (!clip) throw new Error(`${name}: could not calculate screenshot clip`);
+    const screenshot = await client.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, clip: { ...clip, scale: 1 } });
     await writeFile(join(outputDir, `${name}.png`), Buffer.from(screenshot.data, "base64"));
-
-    const diagnostics = await evaluate(client, `(() => ({
-      bodyScrollWidth: document.body.scrollWidth,
-      viewportWidth: document.documentElement.clientWidth,
-      offerRows: document.querySelectorAll('.offer-row').length,
-      notice: document.querySelector('.offer-section .notice')?.textContent ?? null,
-      disclosureCount: document.querySelectorAll('.offer-disclosure').length,
-      labels: [...document.querySelectorAll('.merchant-type')].map(x => x.textContent),
-    }))()`);
-    if (diagnostics.bodyScrollWidth > diagnostics.viewportWidth + 1) throw new Error(`${name}: horizontal overflow ${JSON.stringify(diagnostics)}`);
-    if (mockOffers && diagnostics.offerRows !== 3) throw new Error(`${name}: missing mocked offers ${JSON.stringify(diagnostics)}`);
-    if (mockOffers && diagnostics.disclosureCount !== 2) throw new Error(`${name}: disclosure rendering mismatch ${JSON.stringify(diagnostics)}`);
-    if (!mockOffers && !String(diagnostics.notice ?? "").includes("販売商品は現在登録されていません")) throw new Error(`${name}: empty-state notice mismatch ${JSON.stringify(diagnostics)}`);
     console.log(`${name}: ${JSON.stringify(diagnostics)}`);
   } finally {
     client.close();
@@ -249,10 +212,10 @@ async function captureState({ name, width, height, mockOffers }) {
 
 try {
   await waitForDebugEndpoint();
-  await captureState({ name: "purchase-empty-desktop", width: 1920, height: 1200, mockOffers: false });
-  await captureState({ name: "purchase-empty-mobile", width: 390, height: 900, mockOffers: false });
-  await captureState({ name: "purchase-offers-desktop", width: 1920, height: 1200, mockOffers: true });
-  await captureState({ name: "purchase-offers-mobile", width: 390, height: 900, mockOffers: true });
+  await captureState({ name: "purchase-empty-desktop", width: 1920, height: 1080, validResult: false });
+  await captureState({ name: "purchase-empty-mobile", width: 390, height: 844, validResult: false });
+  await captureState({ name: "purchase-offers-desktop", width: 1920, height: 1080, validResult: true });
+  await captureState({ name: "purchase-offers-mobile", width: 390, height: 844, validResult: true });
 } finally {
   chrome.kill("SIGTERM");
 }
