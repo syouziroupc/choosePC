@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import OfferRecommendations from "./OfferRecommendations";
 
 type CatalogItem = { id: string; label: string; aliases: string[]; confidence: number; status: string };
@@ -565,7 +565,7 @@ export default function App() {
   );
 }
 
-function FieldRow({ label, help, children }: { label: string; help: string; children: React.ReactNode }) {
+function FieldRow({ label, help, children }: { label: string; help: string; children: ReactNode }) {
   return <div className="field-row"><div className="field-label">{label}</div><div className="field-control">{children}</div><p className="field-help">{help}</p></div>;
 }
 
