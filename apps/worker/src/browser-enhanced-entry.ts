@@ -13,9 +13,12 @@ interface Env extends PersistenceEnv {
 
 type Extraction = ReturnType<typeof extractProductPage>;
 type InspectEnvelope = { extraction?: Extraction; error?: string };
+type BaseFetch = (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response>;
+
+const baseFetch = worker.fetch as unknown as BaseFetch;
 
 function extractionCoverage(extraction: Extraction): number {
-  const fields = [
+  const fields: unknown[] = [
     extraction.title,
     extraction.priceJpy,
     extraction.cpuRaw,
@@ -23,12 +26,11 @@ function extractionCoverage(extraction: Extraction): number {
     extraction.ramGb,
     extraction.storageGb,
   ];
-  return fields.reduce((count, value) => count + (value != null && value !== "" ? 1 : 0), 0);
+  return fields.reduce<number>((count, value) => count + (value != null && value !== "" ? 1 : 0), 0);
 }
 
 function shouldRenderFallback(extraction: Extraction): boolean {
-  if (extractionCoverage(extraction) >= 4 && extraction.cpuRaw && extraction.priceJpy != null) return false;
-  return true;
+  return !(extractionCoverage(extraction) >= 4 && Boolean(extraction.cpuRaw) && extraction.priceJpy != null);
 }
 
 async function renderedExtraction(env: Env, sourceUrl: string): Promise<Extraction | null> {
@@ -64,11 +66,11 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname !== "/api/v1/url/inspect" || request.method !== "POST") {
-      return worker.fetch(request, env, ctx);
+      return baseFetch(request, env, ctx);
     }
 
     const forwarded = request.clone();
-    const baseResponse = await worker.fetch(forwarded, env, ctx);
+    const baseResponse = await baseFetch(forwarded, env, ctx);
     if (!baseResponse.ok) return baseResponse;
 
     let basePayload: InspectEnvelope;
