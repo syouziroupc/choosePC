@@ -23,7 +23,7 @@ jobs:
           for attempt in $(seq 1 48); do
             html="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/?smoke=${GITHUB_SHA}" || true)"
             health="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "$BASE_URL/api/v1/health?smoke=${GITHUB_SHA}" || true)"
-            if printf '%s' "$html" | grep -q 'PC購入・買い替え・売却の判定' \
+            if printf '%s' "$html" | grep -q 'このパソコン、買って大丈夫？' \
               && printf '%s' "$html" | grep -q 'PC ASSIST' \
               && printf '%s' "$health" | grep -q '"service":"choosePC"'; then
               printf 'Production route verified on attempt %s.\n' "$attempt"
@@ -32,5 +32,5 @@ jobs:
             fi
             sleep 5
           done
-          echo 'Production route did not serve the current choosePC build within the verification window.'
+          echo 'Production route did not serve the concrete PC ASSIST diagnostic UI within the verification window.'
           exit 1

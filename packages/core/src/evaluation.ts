@@ -3,6 +3,27 @@ import { clamp, extractMetric, marketConfidence, scoreMarketValue, scoreRequirem
 
 export const ENGINE_VERSION = "0.2.1";
 
+const metricLabels: Record<string, string> = {
+  cpuGeneral: "CPUの総合性能",
+  cpuSingle: "CPUのシングル性能",
+  cpuMulti: "CPUのマルチ性能",
+  cpuGaming: "CPUのゲーム性能",
+  gpu1080: "GPUの1080p性能",
+  gpu1440: "GPUの1440p性能",
+  gpu4k: "GPUの4K性能",
+  gpuCompute: "GPUの演算性能",
+  ramGb: "メモリ容量",
+  storageGb: "ストレージ容量",
+  vramGb: "VRAM容量",
+  refreshHz: "画面リフレッシュレート",
+  batteryHealthPct: "バッテリー健康度",
+  weightKg: "本体重量",
+};
+
+function metricLabel(metric: string): string {
+  return metricLabels[metric] ?? "この項目";
+}
+
 function weightedAverage(values: Array<{ value: number; weight: number }>, fallback = 50): number {
   const totalWeight = values.reduce((sum, item) => sum + item.weight, 0);
   if (totalWeight <= 0) return fallback;
@@ -146,7 +167,7 @@ export function decide(scores: ScoreVector, constraints: HardConstraint[] = []):
 function applyMarketTrustGate(decision: Decision, input: EvaluationInput, warnings: string[]): Decision {
   if ((input.context ?? "purchase") !== "purchase" || decision !== "strong_buy") return decision;
   if (input.market?.source === "observed_market") return decision;
-  warnings.push("観測市場データがないため、利用者入力の比較相場だけでは最上位の購入推奨には昇格しません。");
+  warnings.push("実売相場の観測データがないため、入力された比較相場だけでは最上位の購入推奨にはしません。");
   return "buy";
 }
 
@@ -160,11 +181,12 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
 
   for (const req of input.profile.requirements) {
     const actual = extractMetric(req.metric, input.pc, input.hardware);
+    const label = metricLabel(req.metric);
     if (req.essential) essentialTotal += 1;
     if (actual == null) {
       const policy = req.unknownPolicy ?? (req.essential ? "block" : "warn");
-      if (policy === "block") constraints.push({ code: `missing:${req.metric}`, severity: "critical", known: false, message: `${req.metric} の情報が不足しています` });
-      else if (policy === "warn") warnings.push(`${req.metric} の情報が不足しているため、判定精度が下がります。`);
+      if (policy === "block") constraints.push({ code: `missing:${req.metric}`, severity: "critical", known: false, message: `${label}が未入力、または判定用データがありません` });
+      else if (policy === "warn") warnings.push(`${label}を確認できないため、この項目は判定材料が少なくなっています。`);
       continue;
     }
     if (req.essential) essentialKnown += 1;
@@ -172,27 +194,27 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
     const fails = req.direction === "lower_is_better" ? actual > req.minimum : actual < req.minimum;
     const preferred = req.direction === "lower_is_better" ? actual <= req.preferred : actual >= req.preferred;
     if (fails) {
-      reasons.push({ code: `below_min:${req.metric}`, kind: req.essential ? "critical" : "warning", message: `${req.metric} が用途の許容範囲を外れています`, metric: req.metric, actual, minimum: req.minimum, preferred: req.preferred });
-      if (req.essential) constraints.push({ code: `below_min:${req.metric}`, severity: "critical", known: true, message: `${req.metric} が用途の必須条件を満たしません` });
+      reasons.push({ code: `below_min:${req.metric}`, kind: req.essential ? "critical" : "warning", message: `${label}がこの用途の最低目安に届いていません`, metric: req.metric, actual, minimum: req.minimum, preferred: req.preferred });
+      if (req.essential) constraints.push({ code: `below_min:${req.metric}`, severity: "critical", known: true, message: `${label}がこの用途の必須条件を満たしていません` });
     } else if (preferred) {
-      reasons.push({ code: `preferred:${req.metric}`, kind: "positive", message: `${req.metric} は推奨水準を満たしています`, metric: req.metric, actual, minimum: req.minimum, preferred: req.preferred });
+      reasons.push({ code: `preferred:${req.metric}`, kind: "positive", message: `${label}はこの用途の推奨目安を満たしています`, metric: req.metric, actual, minimum: req.minimum, preferred: req.preferred });
     } else {
-      reasons.push({ code: `acceptable:${req.metric}`, kind: "neutral", message: `${req.metric} は許容範囲です`, metric: req.metric, actual, minimum: req.minimum, preferred: req.preferred });
+      reasons.push({ code: `acceptable:${req.metric}`, kind: "neutral", message: `${label}はこの用途で使える範囲です`, metric: req.metric, actual, minimum: req.minimum, preferred: req.preferred });
     }
   }
 
   if (input.pc.category === "gaming_laptop" && input.pc.gpu?.variant === "laptop" && input.pc.gpu.tgpW == null) {
-    warnings.push("ゲーミングノートはGPUのTGPで実性能が変わるため、TGP不明時は保守的に判定します。");
+    warnings.push("ゲーミングノートは同じGPU名でもTGPで性能が変わります。TGPが分からないため、余裕を見て判定しています。");
     constraints.push({ code: "gaming_laptop:tgp_unknown", severity: "warning", known: true, message: "GPU TGPが不明です" });
   }
   if (isGamingCategory(input.pc.category) && input.pc.extra?.coolingScore == null) {
-    warnings.push("冷却性能の実測・信頼できる仕様が未登録のため、持続性能を保守的に評価しています。");
+    warnings.push("冷却性能のデータがないため、長時間負荷時の性能には余裕を見て判定しています。");
     constraints.push({ code: "gaming:cooling_unknown", severity: "warning", known: true, message: "冷却性能が不明です" });
   }
   if (input.pc.extra?.psuWatts && input.pc.extra?.recommendedPsuWatts && input.pc.extra.psuWatts < input.pc.extra.recommendedPsuWatts) {
     constraints.push({ code: "desktop:psu_insufficient", severity: "critical", known: true, message: "電源容量が必要目安を下回っています" });
   } else if (isDesktopPowerRelevant(input.pc.category) && (input.pc.extra?.psuWatts == null || input.pc.extra?.recommendedPsuWatts == null)) {
-    warnings.push("電源容量または必要電源目安が不明なため、構成安全性の確認が必要です。");
+    warnings.push("電源容量を確認できないため、デスクトップPCでは購入前に電源ユニットの容量確認が必要です。");
     constraints.push({ code: "desktop:psu_unknown", severity: "warning", known: true, message: "電源情報が不明です" });
   }
 
@@ -205,10 +227,10 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
   const confidence = deriveConfidence(input, essentialKnown, essentialTotal);
   const scores: ScoreVector = { hardware, fit, value, condition, longevity, risk, confidence };
 
-  if (!input.market && (input.context ?? "purchase") === "purchase") warnings.push("市場相場データがないため、価格評価は中立値で仮置きしています。");
-  if (input.market?.source === "user_estimate") warnings.push("比較相場は利用者入力の参考値です。観測市場データとしては扱っていません。");
-  if (value >= 85) reasons.push({ code: "value:good", kind: "positive", message: "入力された相場に対して価格面は有利です" });
-  if (value < 45) reasons.push({ code: "value:poor", kind: "warning", message: "入力された相場に対して価格が高めです" });
+  if (!input.market && (input.context ?? "purchase") === "purchase") warnings.push("比較できる相場データがないため、販売価格は良い・悪いのどちらにも判定していません。");
+  if (input.market?.source === "user_estimate") warnings.push("比較相場は入力された参考価格です。実売データとは別に扱っています。");
+  if (value >= 85) reasons.push({ code: "value:good", kind: "positive", message: "入力された比較相場に対して販売価格は安めです" });
+  if (value < 45) reasons.push({ code: "value:poor", kind: "warning", message: "入力された比較相場に対して販売価格が高めです" });
 
   const decision = applyMarketTrustGate(decide(scores, constraints), input, warnings);
   return {

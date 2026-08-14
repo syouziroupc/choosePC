@@ -5,45 +5,61 @@ const css = await readFile(new URL("../src/styles.css", import.meta.url), "utf8"
 const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
 
 const failures = [];
+
+const requiredApp = [
+  ["このパソコン、買って大丈夫？", "concrete purchase question"],
+  ["商品URLで確認", "URL diagnostic route"],
+  ["スペックから", "manual diagnostic route"],
+  ["入力内容", "persistent selected-input summary"],
+  ["正二郎商事株式会社", "operator identity"],
+  ["判定で見ている項目", "plain-language scoring explanation"],
+  ["field-row", "data-dense diagnostic field rows"],
+  ["diagnosis-layout", "desktop diagnostic workspace"],
+];
+for (const [needle, label] of requiredApp) {
+  if (!app.includes(needle)) failures.push(`App.tsx is missing ${label}: ${needle}`);
+}
+
 const forbiddenApp = [
-  ["eyebrow", "decorative eyebrow labels"],
+  ["PCの購入・買い替え・売却を判定", "abstract generic H1"],
   ["HOW IT WORKS", "generic landing-page process heading"],
-  ["hero-proof", "four-part proof strip"],
-  ["journey-steps", "generic three-step landing-page sequence"],
-  ["action-bridge", "full-width conversion band"],
+  ["hero-proof", "generic proof strip"],
+  ["journey-steps", "generic landing-page sequence"],
+  ["eyebrow", "decorative eyebrow copy"],
+  ["action-bridge", "generic conversion band"],
   ["company-band", "promotional operator band"],
-  ["header-cta", "duplicate header CTA"],
 ];
 for (const [needle, label] of forbiddenApp) {
   if (app.includes(needle)) failures.push(`App.tsx reintroduced ${label}: ${needle}`);
 }
 
-const forbiddenCss = [
-  ["linear-gradient", "decorative gradient"],
-  ["radial-gradient", "decorative gradient"],
-  ["backdrop-filter", "glass-effect header"],
-  ["box-shadow", "page/card shadow treatment"],
+const requiredCss = [
+  ["1760px", "wide 1920px layout width"],
+  ["--header:#0b3b5b", "colored service header"],
+  ["grid-template-columns:minmax(0,1fr) 380px", "desktop main + summary sidebar layout"],
+  ["position:sticky;top:112px", "persistent desktop input summary"],
 ];
-for (const [needle, label] of forbiddenCss) {
-  if (css.includes(needle)) failures.push(`styles.css reintroduced ${label}: ${needle}`);
+for (const [needle, label] of requiredCss) {
+  if (!css.includes(needle)) failures.push(`styles.css is missing ${label}: ${needle}`);
 }
 
-if (/border-radius\s*:\s*(?!0(?:px|rem|em|%|;|\}))/i.test(css)) {
-  failures.push("styles.css contains non-zero border radius; review whether a rounded container is actually required.");
+for (const needle of ["linear-gradient", "radial-gradient", "backdrop-filter"]) {
+  if (css.includes(needle)) failures.push(`styles.css reintroduced decorative template effect: ${needle}`);
 }
-if (!app.includes("PCの購入・買い替え・売却を判定")) {
-  failures.push("Direct task-oriented H1 is missing.");
+
+if (!index.includes("PC ASSIST | このパソコン、買って大丈夫？")) {
+  failures.push("index.html is missing the concrete diagnostic page title.");
 }
-if (!app.includes("商品URL") || !app.includes("スペックから")) {
-  failures.push("Primary diagnostic inputs are not clearly named.");
+if (index.includes("beta-notice")) {
+  failures.push("index.html still renders the obsolete duplicate beta notice.");
 }
-if (!index.includes("PC購入・買い替え・売却の判定")) {
-  failures.push("The static page title no longer matches the direct task-oriented interface.");
+if (!index.includes('content="#0b3b5b"')) {
+  failures.push("index.html theme-color does not match the colored service header.");
 }
 
 if (failures.length) {
-  console.error("UI authenticity regression check failed:\n- " + failures.join("\n- "));
+  console.error("UI diagnostic-layout regression check failed:\n- " + failures.join("\n- "));
   process.exit(1);
 }
 
-console.log("UI authenticity regression check passed.");
+console.log("UI diagnostic-layout regression check passed.");
