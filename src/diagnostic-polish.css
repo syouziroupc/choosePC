@@ -6,8 +6,8 @@
  */
 
 :root{
-  --auth-max:1280px;
-  --auth-reading:900px;
+  --auth-max:1440px;
+  --auth-reading:1180px;
   --auth-text:#1c2730;
   --auth-muted:#5c6973;
   --auth-line:#d8dee3;
@@ -22,10 +22,10 @@ body{background:#fff;color:var(--auth-text)}
 .service-notice,.operator-stamp,.diagnosis-progress{display:none!important}
 
 .site-main{display:flex;flex-direction:column;padding-bottom:64px}
-.page-title-row{order:1;display:block;max-width:var(--auth-reading);padding:42px 0 18px}
+.page-title-row{order:1;display:block;max-width:1000px;padding:42px 0 18px}
 .page-context{margin-bottom:4px;font-size:12px;letter-spacing:.02em}
 .page-title-row h1{font-size:clamp(34px,3vw,46px);line-height:1.18;letter-spacing:-.035em}
-.page-title-row>div:first-child>p:last-child{max-width:760px;margin-top:12px;font-size:15px;line-height:1.75;color:#45545f}
+.page-title-row>div:first-child>p:last-child{max-width:820px;margin-top:12px;font-size:15px;line-height:1.75;color:#45545f}
 
 .diagnosis-layout{order:2;display:block;max-width:var(--auth-reading)}
 .diagnosis-panel{border:0;background:transparent}
@@ -33,7 +33,7 @@ body{background:#fff;color:var(--auth-text)}
 .diagnosis-sidebar{display:none!important}
 
 .mode-switch{display:flex;width:max-content;max-width:100%;padding:0;margin:0 0 16px;border:0;background:transparent}
-.mode-switch button{min-width:0;height:40px;padding:0 18px;border:0;border-bottom:2px solid var(--auth-line);background:transparent;color:#66747e;font-size:13px;font-weight:700}
+.mode-switch button{min-width:0;height:40px;padding:0 18px;border:0;border-bottom:2px solid var(--auth-line);background:transparent;color:#66747e;font-size:13px;font-weight:700;white-space:nowrap}
 .mode-switch button:first-child{padding-left:0;padding-right:22px}
 .mode-switch button.active{color:var(--auth-brand);border-bottom-color:var(--auth-brand)}
 .mode-switch button:hover{background:transparent;color:var(--auth-brand-dark)}
@@ -89,8 +89,10 @@ body{background:#fff;color:var(--auth-text)}
 .compact-result-table,.market-result{margin:22px 0;border:0;border-top:1px solid var(--auth-line);border-bottom:1px solid var(--auth-line)}
 .compact-result-table>div,.market-result>div{padding:13px 12px 13px 0;border-right:0}
 
-/* Do not recommend products when the evaluation itself is held for missing data. */
-.site-main:has(.result-banner.neutral)>.offer-section{display:none!important}
+/* A held diagnosis should show only what is missing, not synthetic positives or purchase actions. */
+.result-banner.neutral~.reason-grid{display:none!important}
+.site-main:has(.result-banner.neutral)>.offer-section,
+.site-main:has(.result-banner.neutral)>.next-actions{display:none!important}
 
 .offer-section{order:5;max-width:var(--auth-reading);margin-top:42px;border:0;background:transparent}
 .offer-section .section-heading{padding:0 0 13px;border:0;border-bottom:1px solid var(--auth-line-strong);background:transparent}
@@ -134,8 +136,9 @@ footer{border-top:1px solid #284e65;background:#082f47}
   .page-title-row h1{font-size:30px;line-height:1.24}
   .page-title-row>div:first-child>p:last-child{margin-top:9px;font-size:13px;line-height:1.65}
   nav a:nth-child(1),nav a:nth-child(2){display:none}
-  .mode-switch{margin-bottom:12px}
-  .mode-switch button{height:36px;font-size:12px}
+  .mode-switch{gap:24px;margin-bottom:12px}
+  .mode-switch button{flex:none!important;height:36px;padding:0;font-size:12px;white-space:nowrap}
+  .mode-switch button:first-child{padding:0}
   .url-panel{padding-bottom:24px}
   .url-row{grid-template-columns:1fr;gap:8px}
   .url-row input,.url-submit{height:50px}
@@ -159,4 +162,5 @@ footer{border-top:1px solid #284e65;background:#082f47}
   .criteria-table>div{grid-template-columns:1fr}
   .criteria-table strong{padding-bottom:4px;border-bottom:0}
   .criteria-table span{padding-top:4px;padding-left:0}
+  .site-main:not(:has(#result))>.principle{display:none}
 }
