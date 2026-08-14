@@ -24,11 +24,14 @@ for (const [needle, label] of requiredApp) {
 }
 
 const requiredPresentation = [
-  ["--auth-max:1280px", "bounded wide-screen reading width"],
+  ["--auth-max:1440px", "bounded wide-screen workspace width"],
+  ["--auth-reading:1180px", "usable 1920px diagnostic width"],
   [".service-notice,.operator-stamp,.diagnosis-progress{display:none!important}", "initial-screen clutter suppression"],
   [".diagnosis-sidebar{display:none!important}", "empty persistent summary removal"],
   [".result-score,.score-table,.engine-note{display:none!important}", "non-primary numeric dashboard suppression"],
-  [".site-main:has(.result-banner.neutral)>.offer-section{display:none!important}", "no product recommendations for insufficient-data results"],
+  [".result-banner.neutral~.reason-grid{display:none!important}", "no synthetic positives on held results"],
+  [".site-main:has(.result-banner.neutral)>.offer-section,", "no product recommendations on held results"],
+  [".site-main:has(.result-banner.neutral)>.next-actions{display:none!important}", "no purchase actions on held results"],
   [".workflow-switch{order:3", "secondary workflows placed after primary diagnosis input"],
 ];
 for (const [needle, label] of requiredPresentation) {
@@ -53,7 +56,7 @@ for (const needle of ["用途：", "価格：", "情報："]) {
   if (!offers.includes(needle)) failures.push(`OfferRecommendations.tsx is missing human-readable comparison signal: ${needle}`);
 }
 
-for (const needle of ["scoreVisible", "offerVisible", "horizontal overflow"]) {
+for (const needle of ["scoreVisible", "offerVisible", "reasonVisible", "nextVisible", "horizontal overflow"]) {
   if (!visual.includes(needle)) failures.push(`capture_visual_states.mjs is missing visual regression assertion: ${needle}`);
 }
 
