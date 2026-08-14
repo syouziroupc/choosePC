@@ -1,0 +1,74 @@
+/* Final composition corrections from rendered 1920/mobile audit.
+ * This file only handles state-dependent page composition that cannot be
+ * expressed cleanly in the base visual tokens without :has() selectors.
+ */
+
+@media (min-width:1081px){
+  .site-main:not(:has(#result)){
+    display:grid;
+    grid-template-columns:minmax(0, 900px) minmax(320px, 1fr);
+    grid-template-rows:auto auto auto 1fr;
+    column-gap:72px;
+    align-items:start;
+  }
+  .site-main:not(:has(#result))>.page-title-row{
+    grid-column:1;
+    grid-row:1;
+    width:100%;
+  }
+  .site-main:not(:has(#result))>.diagnosis-layout{
+    grid-column:1;
+    grid-row:2;
+    width:100%;
+  }
+  .site-main:not(:has(#result))>.workflow-switch{
+    grid-column:1;
+    grid-row:3;
+    width:100%;
+  }
+  .site-main:not(:has(#result))>.principle{
+    grid-column:2;
+    grid-row:1 / span 3;
+    width:100%;
+    margin:72px 0 0;
+    padding:0;
+    align-self:start;
+  }
+  .site-main:not(:has(#result))>.principle .section-heading h2{
+    font-size:24px;
+  }
+  .site-main:not(:has(#result))>.principle .section-heading p{
+    font-size:14px;
+    line-height:1.65;
+  }
+  .site-main:not(:has(#result))>.principle .criteria-table{
+    margin-top:18px;
+  }
+  .site-main:not(:has(#result))>.principle .criteria-table>div{
+    display:block;
+    padding:15px 0;
+  }
+  .site-main:not(:has(#result))>.principle .criteria-table strong,
+  .site-main:not(:has(#result))>.principle .criteria-table span{
+    display:block;
+    padding:0;
+  }
+  .site-main:not(:has(#result))>.principle .criteria-table strong{
+    margin-bottom:4px;
+    font-size:15px;
+  }
+  .site-main:not(:has(#result))>.principle .criteria-table span{
+    font-size:14px;
+    line-height:1.6;
+  }
+}
+
+@media (max-width:720px){
+  .site-main:not(:has(#result))>.principle{
+    display:block;
+    margin-top:52px;
+  }
+  .site-main:not(:has(#result))>.principle .section-heading h2{
+    font-size:24px;
+  }
+}
