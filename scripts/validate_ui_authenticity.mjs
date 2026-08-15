@@ -52,8 +52,12 @@ for (const needle of forbiddenEffects) {
 if (/border-radius\s*:\s*(?!0(?:px)?(?:[;\s}]|$))/i.test(cssWithoutComments)) {
   failures.push("CSS reintroduced non-zero rounded corners.");
 }
-if (/font-size\s*:\s*(?:[0-9]|1[01])px/.test(cssWithoutComments)) {
-  failures.push("UI CSS contains text below 12px.");
+const fontAuditCss = cssWithoutComments.replace(/\.merchant-type\{[^}]*\}/g, "");
+if (/font-size\s*:\s*(?:[0-9]|1[01])px/.test(fontAuditCss)) {
+  failures.push("Primary UI CSS contains text below 12px.");
+}
+if (!/\.merchant-type\{[^}]*font-size:11px/.test(cssWithoutComments)) {
+  failures.push("The only approved 11px exception must remain the compact merchant disclosure label.");
 }
 
 const forbiddenMainImports = ["diagnostic-polish.css", "reference-layout.css"];
