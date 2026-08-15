@@ -1,0 +1,9 @@
+.catalog-suggest-field{position:relative}.catalog-suggest-menu{position:absolute;z-index:40;top:100%;left:0;right:0;max-height:320px;overflow:auto;border:1px solid #96a4ad;border-top:0;background:#fff}.catalog-suggest-menu[hidden]{display:none}.catalog-suggest-option{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border:0;border-bottom:1px solid #e3e7ea;background:#fff;color:inherit;text-align:left;cursor:pointer}.catalog-suggest-option:last-child{border-bottom:0}.catalog-suggest-option:hover,.catalog-suggest-option.active{background:#f5f7f8}.catalog-suggest-label{font-weight:700;line-height:1.35}.catalog-suggest-option small{color:#68747c;font-size:12px;line-height:1.35}
+
+/* Keep Japanese service headings from breaking into orphan characters on narrow screens. */
+.page-title-row h1{text-wrap:balance}
+
+/* Result-state guards: do not show sales/navigation UI when evidence is insufficient. */
+.result-section:has(.result-banner.neutral) .reason-grid{display:none!important}
+.site-main:has(.result-banner.neutral)>.offer-section{display:none!important}
+.site-main:has(.result-banner.neutral)>.next-actions{display:none!important}
