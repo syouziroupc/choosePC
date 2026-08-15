@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 const app = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8");
 const styles = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
-const catalogCss = await readFile(new URL("../src/catalog-suggest.css", import.meta.url), "utf8");
+const interactionCss = await readFile(new URL("../src/interaction.css", import.meta.url), "utf8");
 const main = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
 const offers = await readFile(new URL("../src/OfferRecommendations.tsx", import.meta.url), "utf8");
 const visual = await readFile(new URL("./capture_visual_states.mjs", import.meta.url), "utf8");
@@ -12,7 +12,7 @@ const wrangler = await readFile(new URL("../wrangler.jsonc", import.meta.url), "
 const routingEntry = await readFile(new URL("../apps/worker/src/szpc-entry.ts", import.meta.url), "utf8");
 
 const failures = [];
-const allCss = `${styles}\n${catalogCss}`;
+const allCss = `${styles}\n${interactionCss}`;
 const cssWithoutComments = allCss.replace(/\/\*[\s\S]*?\*\//g, "");
 
 const requiredApp = [
@@ -44,6 +44,15 @@ for (const [needle, label] of requiredDesign) {
   if (!styles.includes(needle)) failures.push(`styles.css is missing ${label}: ${needle}`);
 }
 
+const requiredStateGuards = [
+  [".result-section:has(.result-banner.neutral) .reason-grid{display:none!important}", "insufficient-data explanation suppression"],
+  [".site-main:has(.result-banner.neutral)>.offer-section{display:none!important}", "insufficient-data offer suppression"],
+  [".site-main:has(.result-banner.neutral)>.next-actions{display:none!important}", "insufficient-data action suppression"],
+];
+for (const [needle, label] of requiredStateGuards) {
+  if (!interactionCss.includes(needle)) failures.push(`interaction.css is missing ${label}: ${needle}`);
+}
+
 const forbiddenEffects = ["linear-gradient", "radial-gradient", "conic-gradient", "backdrop-filter", "box-shadow"];
 for (const needle of forbiddenEffects) {
   if (cssWithoutComments.includes(needle)) failures.push(`CSS reintroduced decorative template effect: ${needle}`);
@@ -60,11 +69,11 @@ if (!/\.merchant-type\{[^}]*font-size:11px/.test(cssWithoutComments)) {
   failures.push("The only approved 11px exception must remain the compact merchant disclosure label.");
 }
 
-const forbiddenMainImports = ["diagnostic-polish.css", "reference-layout.css"];
+const forbiddenMainImports = ["diagnostic-polish.css", "reference-layout.css", "catalog-suggest.css"];
 for (const needle of forbiddenMainImports) {
-  if (main.includes(needle)) failures.push(`main.tsx still imports layered override CSS: ${needle}`);
+  if (main.includes(needle)) failures.push(`main.tsx still imports retired or layered CSS: ${needle}`);
 }
-for (const needle of ['import "./styles.css"', 'import "./catalog-suggest.css"']) {
+for (const needle of ['import "./styles.css"', 'import "./interaction.css"']) {
   if (!main.includes(needle)) failures.push(`main.tsx is missing canonical CSS import: ${needle}`);
 }
 
@@ -86,6 +95,7 @@ const requiredRouting = [
   ['const SERVICE_PREFIX = "/pc-check"', "service prefix"],
   ["Response.redirect(url.toString(), 308)", "canonical trailing-slash redirect"],
   ["stripServicePrefix", "prefix stripping"],
+  ["isLocalVite", "local Vite base-path preservation"],
   ["env.ASSETS.fetch", "asset binding dispatch"],
   ['url.pathname.startsWith("/api/")', "legacy/root API dispatch"],
 ];
