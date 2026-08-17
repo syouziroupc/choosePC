@@ -9,7 +9,6 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "postbuild": "node scripts/cloudflare_postbuild_deploy.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "deploy:dry": "npm run build && wrangler deploy --dry-run",
@@ -28,7 +27,6 @@
     "@cloudflare/workers-types": "5.20260813.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.4",
     "typescript": "7.0.2",
     "vite": "8.1.5",
     "vitest": "4.1.10",
