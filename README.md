@@ -62,4 +62,6 @@ Production provisioning is intentionally gated on real Cloudflare and Worker cre
 
 CPU/GPU capability indices remain provisional until external/reproducible calibration evidence satisfies the repository knowledge-validation rules.
 
+The application does not use a manually maintained "350 items" or "500 items" constant as a catalog source of truth; deployed counts must come from validated repository data and production storage.
+
 See `docs/` for the decision policy, data governance, security, collector operation and deployment requirements.
