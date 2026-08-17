@@ -4,20 +4,39 @@ on:
   workflow_run:
     workflows: [ci]
     types: [completed]
-    branches: [agent/bootstrap-baseline]
+    branches: [main]
 
 permissions:
   contents: write
 
+concurrency:
+  group: choosepc-cloudflare-production-sync
+  cancel-in-progress: true
+
 jobs:
   sync:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
-      - name: Move validated production branch
+
+      - name: Refuse stale CI results
+        shell: bash
         run: |
-          git push origin HEAD:refs/heads/cloudflare-production --force
+          set -euo pipefail
+          git fetch origin main
+          latest_main="$(git rev-parse origin/main)"
+          if [ "$latest_main" != "${{ github.event.workflow_run.head_sha }}" ]; then
+            echo "A newer main commit exists; this completed CI run will not be promoted."
+            exit 0
+          fi
+
+      - name: Move validated production branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin cloudflare-production || true
+          git push origin HEAD:refs/heads/cloudflare-production --force-with-lease
