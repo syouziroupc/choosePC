@@ -1,12 +1,14 @@
 name: refresh-cloudflare-production
 
 on:
-  push:
-    branches: [agent/bootstrap-baseline]
-    paths: [.github/workflows/refresh-cloudflare-production.yml]
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: choosepc-cloudflare-production-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
@@ -14,19 +16,30 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: agent/bootstrap-baseline
+          ref: main
           fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
       - name: Validate Cloudflare deploy tree
-        run: |
-          npm ci
-          npm run typecheck
-          npm test
-          npm run build
-          npx wrangler deploy --dry-run
+        shell: bash
         env:
           MARKET_INGEST_TOKEN: ci-dry-run-placeholder
           OFFER_INGEST_TOKEN: ci-dry-run-placeholder
           COMMERCIAL_ADMIN_TOKEN: ci-dry-run-placeholder
           CONVERSION_IMPORT_TOKEN: ci-dry-run-placeholder
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check
+          npx wrangler deploy --dry-run
+
       - name: Publish validated branch
-        run: git push origin HEAD:refs/heads/cloudflare-production --force
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin cloudflare-production || true
+          git push origin HEAD:refs/heads/cloudflare-production --force-with-lease
