@@ -9,7 +9,6 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "postbuild": "node scripts/cloudflare_postbuild_deploy.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "deploy:dry": "npm run build && wrangler deploy --dry-run",
