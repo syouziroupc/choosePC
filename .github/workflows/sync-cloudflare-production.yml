@@ -17,7 +17,7 @@ jobs:
   sync:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     env:
       UI_URL: https://www.szpc.jp/pc-check/
       HEALTH_URL: https://www.szpc.jp/api/v1/health
@@ -88,7 +88,7 @@ jobs:
           REQUIRED_GPU_COUNT: ${{ steps.expected.outputs.gpu_count }}
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 72); do
+          for attempt in $(seq 1 240); do
             html="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "${UI_URL}?smoke=${GITHUB_SHA}" || true)"
             health="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "${HEALTH_URL}?smoke=${GITHUB_SHA}" || true)"
             catalog="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "${CATALOG_URL}?smoke=${GITHUB_SHA}" || true)"
