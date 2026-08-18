@@ -19,9 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      UI_URL: https://www.szpc.jp/pc-check/
-      HEALTH_URL: https://www.szpc.jp/api/v1/health
-      CATALOG_URL: https://www.szpc.jp/api/v1/catalog
+      API_ORIGIN: https://choosepc.syouziroupc.workers.dev
+      FRONTEND_ORIGIN: https://www.szpc.jp
     steps:
       - uses: actions/checkout@v6
         with:
@@ -55,7 +54,7 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve exact expected production markers
+      - name: Resolve exact expected API markers
         if: steps.freshness.outputs.promote == 'true'
         id: expected
         shell: bash
@@ -64,9 +63,9 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const path = require('path');
-          const source = fs.readFileSync('apps/worker/src/browser-enhanced-entry.ts', 'utf8');
-          const revision = source.match(/export const UI_REVISION = "([^"]+)";/)?.[1];
-          if (!revision) throw new Error('UI_REVISION was not found');
+          const source = fs.readFileSync('apps/worker/src/api-entry.ts', 'utf8');
+          const apiVersion = source.match(/const API_VERSION = "([^"]+)";/)?.[1];
+          if (!apiVersion) throw new Error('API_VERSION was not found');
           function countJsonEntries(dir) {
             return fs.readdirSync(dir)
               .filter((name) => name.endsWith('.json'))
@@ -76,48 +75,53 @@ jobs:
               }, 0);
           }
           fs.appendFileSync(process.env.GITHUB_OUTPUT,
-            `ui_revision=${revision}\ncpu_count=${countJsonEntries('knowledge/hardware/cpu')}\ngpu_count=${countJsonEntries('knowledge/hardware/gpu')}\n`);
+            `api_version=${apiVersion}\ncpu_count=${countJsonEntries('knowledge/hardware/cpu')}\ngpu_count=${countJsonEntries('knowledge/hardware/gpu')}\n`);
           NODE
 
-      - name: Verify Cloudflare production converges to this exact source
+      - name: Verify Cloudflare API converges to this exact source
         if: steps.freshness.outputs.promote == 'true'
         shell: bash
         env:
-          REQUIRED_UI_REVISION: ${{ steps.expected.outputs.ui_revision }}
+          REQUIRED_API_VERSION: ${{ steps.expected.outputs.api_version }}
           REQUIRED_CPU_COUNT: ${{ steps.expected.outputs.cpu_count }}
           REQUIRED_GPU_COUNT: ${{ steps.expected.outputs.gpu_count }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 240); do
-            html="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "${UI_URL}?smoke=${GITHUB_SHA}" || true)"
-            health="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "${HEALTH_URL}?smoke=${GITHUB_SHA}" || true)"
-            catalog="$(curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' "${CATALOG_URL}?smoke=${GITHUB_SHA}" || true)"
+            rm -f /tmp/meta.json /tmp/health.json /tmp/catalog.json /tmp/health.headers
+            curl --fail --silent --show-error --location --max-time 10 \
+              -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
+              "${API_ORIGIN}/api/v1?smoke=${GITHUB_SHA}" -o /tmp/meta.json || true
+            curl --fail --silent --show-error --location --max-time 10 \
+              -D /tmp/health.headers -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
+              "${API_ORIGIN}/api/v1/health?smoke=${GITHUB_SHA}" -o /tmp/health.json || true
+            curl --fail --silent --show-error --location --max-time 10 \
+              -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
+              "${API_ORIGIN}/api/v1/catalog?smoke=${GITHUB_SHA}" -o /tmp/catalog.json || true
 
-            catalog_ok=0
-            if [ -n "$catalog" ]; then
-              printf '%s' "$catalog" > /tmp/catalog.json
-              if REQUIRED_CPU_COUNT="$REQUIRED_CPU_COUNT" REQUIRED_GPU_COUNT="$REQUIRED_GPU_COUNT" node <<'NODE'
+            if [ -s /tmp/meta.json ] && [ -s /tmp/health.json ] && [ -s /tmp/catalog.json ] && [ -s /tmp/health.headers ]; then
+              if REQUIRED_API_VERSION="$REQUIRED_API_VERSION" REQUIRED_CPU_COUNT="$REQUIRED_CPU_COUNT" REQUIRED_GPU_COUNT="$REQUIRED_GPU_COUNT" node <<'NODE'
           const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('/tmp/catalog.json', 'utf8'));
-          const cpu = Array.isArray(data.cpus) ? data.cpus.length : -1;
-          const gpu = Array.isArray(data.gpus) ? data.gpus.length : -1;
+          const meta = JSON.parse(fs.readFileSync('/tmp/meta.json', 'utf8'));
+          const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
+          const catalog = JSON.parse(fs.readFileSync('/tmp/catalog.json', 'utf8'));
+          const cpu = Array.isArray(catalog.cpus) ? catalog.cpus.length : -1;
+          const gpu = Array.isArray(catalog.gpus) ? catalog.gpus.length : -1;
+          if (meta.service !== 'choosePC' || meta.mode !== 'api' || meta.uiHostedHere !== false) process.exit(1);
+          if (meta.apiVersion !== process.env.REQUIRED_API_VERSION) process.exit(1);
+          if (health.ok !== true || health.service !== 'choosePC' || health.mode !== 'api') process.exit(1);
+          if (health.apiVersion !== process.env.REQUIRED_API_VERSION) process.exit(1);
           if (cpu !== Number(process.env.REQUIRED_CPU_COUNT) || gpu !== Number(process.env.REQUIRED_GPU_COUNT)) process.exit(1);
           NODE
               then
-                catalog_ok=1
+                if tr -d '\r' < /tmp/health.headers | grep -qi "^access-control-allow-origin: ${FRONTEND_ORIGIN}$"; then
+                  echo "Cloudflare API verified: version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
+                  exit 0
+                fi
               fi
-            fi
-
-            if printf '%s' "$html" | grep -q 'このパソコン、買って大丈夫？' \
-              && printf '%s' "$html" | grep -q 'PC ASSIST' \
-              && printf '%s' "$health" | grep -q '"service":"choosePC"' \
-              && printf '%s' "$health" | grep -q "\"uiRevision\":\"${REQUIRED_UI_REVISION}\"" \
-              && [ "$catalog_ok" -eq 1 ]; then
-              echo "Cloudflare production verified: revision=${REQUIRED_UI_REVISION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
-              exit 0
             fi
             sleep 5
           done
 
-          echo "Cloudflare production did not converge to revision=${REQUIRED_UI_REVISION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
+          echo "Cloudflare API did not converge to version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
           exit 1

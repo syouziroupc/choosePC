@@ -48,15 +48,20 @@ jobs:
       - name: Run complete validation
         run: npm run check
 
-      - name: Verify generated deployment files
+      - name: Verify API-only deployment boundary
         shell: bash
         run: |
           set -euo pipefail
-          test -f dist/client/index.html
-          test -f dist/choosepc/wrangler.json
+          node <<'NODE'
+          const fs = require('fs');
+          const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          if (config.main !== './apps/worker/src/api-entry.ts') throw new Error(`Unexpected Worker entry: ${config.main}`);
+          if (Array.isArray(config.routes) && config.routes.length) throw new Error('choosePC API backend must not own www.szpc.jp routes');
+          if (config.assets) throw new Error('choosePC API backend must not deploy SZPC static assets');
+          NODE
 
       - name: Wrangler deployment dry-run
         run: npx wrangler deploy --dry-run
 
-      - name: Deploy exact validated build
+      - name: Deploy exact validated API backend
         run: npx wrangler deploy --strict
