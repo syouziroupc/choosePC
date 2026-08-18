@@ -18,7 +18,7 @@ type ScheduledHandler = (controller: ScheduledController, env: Env, ctx: Executi
 
 const appFetch = app.fetch as unknown as AppFetch;
 const scheduled = production.scheduled as unknown as ScheduledHandler;
-const API_VERSION = "2026-08-18-static-frontend-v5";
+const API_VERSION = "2026-08-18-static-frontend-v6";
 const CLIENT_HEADER = "x-choosepc-client";
 const SESSION_COOKIE = "pc_assist_sid";
 const PUBLIC_API_PREFIX = "/api/v1/";
@@ -182,7 +182,7 @@ async function adminOverview(request: Request, env: Env): Promise<Response> {
   if (!await authorized(request, env.COMMERCIAL_ADMIN_TOKEN)) return json({ error: "NOT_AUTHORIZED" }, 401);
   if (!env.DB) return json({ error: "ADMIN_DB_UNAVAILABLE" }, 503);
   try {
-    return json({ overview: await loadAdminOverview(env) });
+    return json(await loadAdminOverview(env));
   } catch (error) {
     console.error(JSON.stringify({
       event: "admin_overview_error",
