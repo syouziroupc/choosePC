@@ -1,6 +1,9 @@
-name: Deploy choosePC manually
+name: Deploy choosePC production
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -8,20 +11,24 @@ permissions:
 
 concurrency:
   group: choosepc-direct-production-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
+
+env:
+  PRODUCTION_ORIGIN: https://choosepc.syouziroupc.workers.dev
+  FRONTEND_ORIGIN: https://www.szpc.jp
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Checkout main
+      - name: Checkout exact commit
         uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v6
@@ -48,7 +55,30 @@ jobs:
       - name: Run complete validation
         run: npm run check
 
-      - name: Verify API-only deployment boundary
+      - name: Resolve expected production markers
+        id: expected
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const source = fs.readFileSync('apps/worker/src/api-entry.ts', 'utf8');
+          const apiVersion = source.match(/const API_VERSION = "([^"]+)";/)?.[1];
+          if (!apiVersion) throw new Error('API_VERSION was not found');
+          function countJsonEntries(dir) {
+            return fs.readdirSync(dir)
+              .filter((name) => name.endsWith('.json'))
+              .reduce((sum, name) => {
+                const value = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
+                return sum + (Array.isArray(value) ? value.length : 1);
+              }, 0);
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,
+            `api_version=${apiVersion}\ncpu_count=${countJsonEntries('knowledge/hardware/cpu')}\ngpu_count=${countJsonEntries('knowledge/hardware/gpu')}\n`);
+          NODE
+
+      - name: Verify deployment boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -56,12 +86,74 @@ jobs:
           const fs = require('fs');
           const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
           if (config.main !== './apps/worker/src/api-entry.ts') throw new Error(`Unexpected Worker entry: ${config.main}`);
-          if (Array.isArray(config.routes) && config.routes.length) throw new Error('choosePC API backend must not own www.szpc.jp routes');
-          if (config.assets) throw new Error('choosePC API backend must not deploy SZPC static assets');
+          if (config.workers_dev !== true) throw new Error('workers_dev must be enabled for the operations console');
+          if (Array.isArray(config.routes) && config.routes.length) throw new Error('choosePC backend must not own www.szpc.jp routes');
+          if (config.assets) throw new Error('choosePC backend must not deploy SZPC static assets');
           NODE
 
       - name: Wrangler deployment dry-run
         run: npx wrangler deploy --dry-run
 
-      - name: Deploy exact validated API backend
-        run: npx wrangler deploy --strict
+      - name: Deploy exact validated Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --strict 2>&1 | tee /tmp/deploy.log
+
+      - name: Verify real workers.dev production
+        shell: bash
+        env:
+          REQUIRED_API_VERSION: ${{ steps.expected.outputs.api_version }}
+          REQUIRED_CPU_COUNT: ${{ steps.expected.outputs.cpu_count }}
+          REQUIRED_GPU_COUNT: ${{ steps.expected.outputs.gpu_count }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            rm -f /tmp/ops.html /tmp/meta.json /tmp/health.json /tmp/catalog.json /tmp/health.headers
+            curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' \
+              "${PRODUCTION_ORIGIN}/?deploy=${GITHUB_SHA}" -o /tmp/ops.html || true
+            curl --fail --silent --show-error --location --max-time 10 \
+              -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
+              "${PRODUCTION_ORIGIN}/api/v1?deploy=${GITHUB_SHA}" -o /tmp/meta.json || true
+            curl --fail --silent --show-error --location --max-time 10 \
+              -D /tmp/health.headers -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
+              "${PRODUCTION_ORIGIN}/api/v1/health?deploy=${GITHUB_SHA}" -o /tmp/health.json || true
+            curl --fail --silent --show-error --location --max-time 10 \
+              -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
+              "${PRODUCTION_ORIGIN}/api/v1/catalog?deploy=${GITHUB_SHA}" -o /tmp/catalog.json || true
+
+            if [ -s /tmp/ops.html ] && [ -s /tmp/meta.json ] && [ -s /tmp/health.json ] && [ -s /tmp/catalog.json ] && [ -s /tmp/health.headers ]; then
+              if grep -q 'choosePC Operations' /tmp/ops.html \
+                && REQUIRED_API_VERSION="$REQUIRED_API_VERSION" REQUIRED_CPU_COUNT="$REQUIRED_CPU_COUNT" REQUIRED_GPU_COUNT="$REQUIRED_GPU_COUNT" node <<'NODE'
+          const fs = require('fs');
+          const meta = JSON.parse(fs.readFileSync('/tmp/meta.json', 'utf8'));
+          const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
+          const catalog = JSON.parse(fs.readFileSync('/tmp/catalog.json', 'utf8'));
+          const cpu = Array.isArray(catalog.cpus) ? catalog.cpus.length : -1;
+          const gpu = Array.isArray(catalog.gpus) ? catalog.gpus.length : -1;
+          if (meta.service !== 'choosePC' || meta.mode !== 'api') process.exit(1);
+          if (meta.publicUiHostedHere !== false || typeof meta.operationsConsole !== 'string') process.exit(1);
+          if (meta.apiVersion !== process.env.REQUIRED_API_VERSION) process.exit(1);
+          if (health.ok !== true || health.service !== 'choosePC' || health.apiVersion !== process.env.REQUIRED_API_VERSION) process.exit(1);
+          if (cpu !== Number(process.env.REQUIRED_CPU_COUNT) || gpu !== Number(process.env.REQUIRED_GPU_COUNT)) process.exit(1);
+          NODE
+              then
+                if tr -d '\r' < /tmp/health.headers | grep -qi "^access-control-allow-origin: ${FRONTEND_ORIGIN}$"; then
+                  echo "Production verified: ${PRODUCTION_ORIGIN} version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
+                  exit 0
+                fi
+              fi
+            fi
+            sleep 5
+          done
+
+          echo 'Production did not match the deployed source.'
+          echo '--- deploy log ---'
+          cat /tmp/deploy.log || true
+          echo '--- root ---'
+          cat /tmp/ops.html || true
+          echo '--- metadata ---'
+          cat /tmp/meta.json || true
+          echo '--- health ---'
+          cat /tmp/health.json || true
+          exit 1
