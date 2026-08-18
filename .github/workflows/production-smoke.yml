@@ -31,11 +31,9 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const path = require('path');
-
           const source = fs.readFileSync('apps/worker/src/api-entry.ts', 'utf8');
           const apiVersion = source.match(/const API_VERSION = "([^"]+)";/)?.[1];
           if (!apiVersion) throw new Error('API_VERSION was not found');
-
           function countJsonEntries(dir) {
             return fs.readdirSync(dir)
               .filter((name) => name.endsWith('.json'))
@@ -44,14 +42,12 @@ jobs:
                 return sum + (Array.isArray(value) ? value.length : 1);
               }, 0);
           }
-
           const cpuCount = countJsonEntries('knowledge/hardware/cpu');
           const gpuCount = countJsonEntries('knowledge/hardware/gpu');
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `api_version=${apiVersion}\ncpu_count=${cpuCount}\ngpu_count=${gpuCount}\n`);
-          console.log(`Expected production API: version=${apiVersion}, CPUs=${cpuCount}, GPUs=${gpuCount}`);
           NODE
 
-      - name: Wait for exact choosePC API deployment
+      - name: Wait for exact choosePC operations/API deployment
         shell: bash
         env:
           REQUIRED_API_VERSION: ${{ steps.expected.outputs.api_version }}
@@ -60,7 +56,9 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 240); do
-            rm -f /tmp/meta.json /tmp/health.json /tmp/catalog.json /tmp/health.headers
+            rm -f /tmp/ops.html /tmp/meta.json /tmp/health.json /tmp/catalog.json /tmp/health.headers
+            curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' \
+              "${API_ORIGIN}/?smoke=${GITHUB_SHA}" -o /tmp/ops.html || true
             curl --fail --silent --show-error --location --max-time 10 \
               -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
               "${API_ORIGIN}/api/v1?smoke=${GITHUB_SHA}" -o /tmp/meta.json || true
@@ -71,15 +69,18 @@ jobs:
               -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
               "${API_ORIGIN}/api/v1/catalog?smoke=${GITHUB_SHA}" -o /tmp/catalog.json || true
 
-            if [ -s /tmp/meta.json ] && [ -s /tmp/health.json ] && [ -s /tmp/catalog.json ] && [ -s /tmp/health.headers ]; then
-              if REQUIRED_API_VERSION="$REQUIRED_API_VERSION" REQUIRED_CPU_COUNT="$REQUIRED_CPU_COUNT" REQUIRED_GPU_COUNT="$REQUIRED_GPU_COUNT" node <<'NODE'
+            if [ -s /tmp/ops.html ] && [ -s /tmp/meta.json ] && [ -s /tmp/health.json ] && [ -s /tmp/catalog.json ] && [ -s /tmp/health.headers ]; then
+              if grep -q 'choosePC Operations' /tmp/ops.html \
+                && grep -q 'API利用状況' /tmp/ops.html \
+                && REQUIRED_API_VERSION="$REQUIRED_API_VERSION" REQUIRED_CPU_COUNT="$REQUIRED_CPU_COUNT" REQUIRED_GPU_COUNT="$REQUIRED_GPU_COUNT" node <<'NODE'
           const fs = require('fs');
           const meta = JSON.parse(fs.readFileSync('/tmp/meta.json', 'utf8'));
           const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
           const catalog = JSON.parse(fs.readFileSync('/tmp/catalog.json', 'utf8'));
           const cpu = Array.isArray(catalog.cpus) ? catalog.cpus.length : -1;
           const gpu = Array.isArray(catalog.gpus) ? catalog.gpus.length : -1;
-          if (meta.service !== 'choosePC' || meta.mode !== 'api' || meta.uiHostedHere !== false) process.exit(1);
+          if (meta.service !== 'choosePC' || meta.mode !== 'api' || meta.publicUiHostedHere !== false) process.exit(1);
+          if (typeof meta.operationsConsole !== 'string' || !meta.operationsConsole.endsWith('/')) process.exit(1);
           if (meta.apiVersion !== process.env.REQUIRED_API_VERSION) process.exit(1);
           if (health.ok !== true || health.service !== 'choosePC' || health.mode !== 'api') process.exit(1);
           if (health.apiVersion !== process.env.REQUIRED_API_VERSION) process.exit(1);
@@ -87,8 +88,7 @@ jobs:
           NODE
               then
                 if tr -d '\r' < /tmp/health.headers | grep -qi "^access-control-allow-origin: ${FRONTEND_ORIGIN}$"; then
-                  echo "choosePC API verified on attempt ${attempt}: version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
-                  cat /tmp/health.json
+                  echo "choosePC operations/API verified on attempt ${attempt}: version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
                   exit 0
                 fi
               fi
@@ -96,5 +96,5 @@ jobs:
             sleep 5
           done
 
-          echo "choosePC API did not converge at ${API_ORIGIN} to version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
+          echo "choosePC operations/API did not converge at ${API_ORIGIN}"
           exit 1
