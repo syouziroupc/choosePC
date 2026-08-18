@@ -162,7 +162,7 @@ export default {
     const publicApi = isPublicApi(url.pathname);
 
     if ((url.pathname === "/" || url.pathname === "/api" || url.pathname === "/api/v1") && request.method === "GET") {
-      return metadata(request, env);
+      return withApiHeaders(metadata(request, env), origin, Boolean(originHeader));
     }
 
     if (!publicApi) {
