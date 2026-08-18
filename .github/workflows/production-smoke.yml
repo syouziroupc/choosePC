@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: choosepc-production-smoke
@@ -20,46 +20,31 @@ jobs:
     env:
       API_ORIGIN: https://choosepc.syouziroupc.workers.dev
       FRONTEND_ORIGIN: https://www.szpc.jp
-      REQUIRED_API_VERSION: 2026-08-18-static-frontend-v2
+      REQUIRED_API_VERSION: 2026-08-18-static-frontend-v3
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Probe and record actual production
+      - name: Verify actual workers.dev deployment
         shell: bash
         run: |
           set -u
-          matched=0
-          for attempt in $(seq 1 24); do
+          for attempt in $(seq 1 30); do
             root_code=$(curl -L -sS -o /tmp/root -w '%{http_code}' --max-time 10 "${API_ORIGIN}/?smoke=${GITHUB_SHA}-${attempt}" || echo 000)
             meta_code=$(curl -L -sS -o /tmp/meta -w '%{http_code}' --max-time 10 -H "Origin: ${FRONTEND_ORIGIN}" "${API_ORIGIN}/api/v1?smoke=${GITHUB_SHA}-${attempt}" || echo 000)
             health_code=$(curl -L -sS -o /tmp/health -w '%{http_code}' --max-time 10 -H "Origin: ${FRONTEND_ORIGIN}" "${API_ORIGIN}/api/v1/health?smoke=${GITHUB_SHA}-${attempt}" || echo 000)
+            echo "attempt=${attempt} root=${root_code} meta=${meta_code} health=${health_code}"
             if [ "$root_code" = 200 ] && [ "$meta_code" = 200 ] && [ "$health_code" = 200 ] \
               && grep -q 'choosePC Operations' /tmp/root \
               && grep -q "$REQUIRED_API_VERSION" /tmp/meta \
               && grep -q "$REQUIRED_API_VERSION" /tmp/health; then
-              matched=1
-              break
+              echo 'LIVE_PRODUCTION_MATCHED=true'
+              echo '--- meta ---'; cat /tmp/meta
+              echo '--- health ---'; cat /tmp/health
+              exit 0
             fi
             sleep 5
           done
-          mkdir -p debug
-          {
-            echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "source_sha=${GITHUB_SHA}"
-            echo "expected_api_version=${REQUIRED_API_VERSION}"
-            echo "matched=${matched}"
-            echo "root_http=${root_code}"
-            echo "meta_http=${meta_code}"
-            echo "health_http=${health_code}"
-            echo '--- root ---'; head -c 5000 /tmp/root 2>/dev/null || true; echo
-            echo '--- meta ---'; head -c 5000 /tmp/meta 2>/dev/null || true; echo
-            echo '--- health ---'; head -c 5000 /tmp/health 2>/dev/null || true; echo
-          } > debug/production-smoke-report.txt
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add debug/production-smoke-report.txt
-          git commit -m 'ci: record actual workers.dev production state' || true
-          git push origin HEAD:cloudflare-production
-          test "$matched" = 1
+          echo 'LIVE_PRODUCTION_MATCHED=false'
+          echo '--- root ---'; head -c 5000 /tmp/root || true; echo
+          echo '--- meta ---'; cat /tmp/meta || true; echo
+          echo '--- health ---'; cat /tmp/health || true; echo
+          exit 1
