@@ -1,29 +1,10 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "choosepc",
-  "main": "./apps/worker/src/szpc-entry.ts",
+  "main": "./apps/worker/src/api-entry.ts",
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": true,
-  "routes": [
-    {
-      "pattern": "www.szpc.jp/pc-check",
-      "zone_name": "szpc.jp"
-    },
-    {
-      "pattern": "www.szpc.jp/pc-check/*",
-      "zone_name": "szpc.jp"
-    },
-    {
-      "pattern": "www.szpc.jp/api/v1/*",
-      "zone_name": "szpc.jp"
-    }
-  ],
-  "assets": {
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": true
-  },
   "browser": {
     "binding": "BROWSER"
   },
