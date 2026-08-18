@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "postbuild": "node scripts/remove_vite_deploy_redirect.mjs && node scripts/deploy_main_from_workers_build.mjs",
+    "postbuild": "node scripts/provision_d1_affiliate_ready.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "deploy:dry": "npm run build && wrangler deploy --dry-run",
