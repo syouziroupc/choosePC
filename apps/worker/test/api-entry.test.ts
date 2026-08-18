@@ -18,17 +18,43 @@ function context() {
   return { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
 }
 
-describe("API-only entry for static SZPC frontend", () => {
-  it("serves API metadata at the worker root instead of a UI", async () => {
+describe("API backend with workers.dev operations console", () => {
+  it("serves the operations console at the worker root", async () => {
     const { env } = makeEnv();
     const response = await worker.fetch(new Request("https://choosepc.example/"), env, context());
-    const body = await response.json() as { service?: string; mode?: string; uiHostedHere?: boolean; persistenceConfigured?: boolean };
+    const body = await response.text();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(response.headers.get("x-robots-tag")).toContain("noindex");
+    expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
+    expect(body).toContain("choosePC Operations");
+    expect(body).toContain("API利用状況");
+    expect(body).toContain("アフィリエイト・送客設定");
+    expect(body).toContain("API動作検証");
+    expect(body).toContain('id="admin-token" type="password"');
+    expect(body).toContain('autocomplete="current-password"');
+    expect(body).toContain('placeholder="COMMERCIAL_ADMIN_TOKEN"');
+    expect(body).not.toMatch(/value=["'][^"']+['"][^>]*id=["']admin-token/i);
+  });
+
+  it("keeps API metadata at /api/v1 instead of the console", async () => {
+    const { env } = makeEnv();
+    const response = await worker.fetch(new Request("https://choosepc.example/api/v1"), env, context());
+    const body = await response.json() as { service?: string; mode?: string; publicUiHostedHere?: boolean; persistenceConfigured?: boolean; operationsConsole?: string };
     expect(response.status).toBe(200);
     expect(body.service).toBe("choosePC");
     expect(body.mode).toBe("api");
-    expect(body.uiHostedHere).toBe(false);
+    expect(body.publicUiHostedHere).toBe(false);
     expect(body.persistenceConfigured).toBe(false);
-    expect(response.headers.get("x-robots-tag")).toContain("noindex");
+    expect(body.operationsConsole).toBe("https://choosepc.example/");
+  });
+
+  it("does not expose admin overview without the commercial admin token", async () => {
+    const { env } = makeEnv();
+    const response = await worker.fetch(new Request("https://choosepc.example/api/internal/admin/overview"), env, context());
+    const body = await response.json() as { error?: string };
+    expect(response.status).toBe(401);
+    expect(body.error).toBe("NOT_AUTHORIZED");
   });
 
   it("allows www.szpc.jp to read public API responses with exact-origin CORS", async () => {
@@ -37,13 +63,14 @@ describe("API-only entry for static SZPC frontend", () => {
       headers: { origin: "https://www.szpc.jp" },
     });
     const response = await worker.fetch(request, env, context());
-    const body = await response.json() as { mode?: string; persistenceConfigured?: boolean };
+    const body = await response.json() as { mode?: string; persistenceConfigured?: boolean; publicUiHostedHere?: boolean };
     expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBe("https://www.szpc.jp");
     expect(response.headers.get("vary")).toContain("Origin");
     expect(response.headers.get("x-choosepc-api-version")).toBeTruthy();
     expect(body.mode).toBe("api");
     expect(body.persistenceConfigured).toBe(false);
+    expect(body.publicUiHostedHere).toBe(false);
   });
 
   it("rejects browser API calls from unrelated origins", async () => {

@@ -92,8 +92,8 @@ export async function upsertCommercialConfiguration(args: {
   await db.prepare(`
     INSERT INTO commercial_programs (
       id, merchant, program_type, status, commission_json, disclosure_text,
-      source_url, last_verified_at, click_ref_param, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      source_url, last_verified_at, click_ref_param, program_key, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO UPDATE SET
       merchant = excluded.merchant,
       program_type = excluded.program_type,
@@ -103,6 +103,7 @@ export async function upsertCommercialConfiguration(args: {
       source_url = excluded.source_url,
       last_verified_at = excluded.last_verified_at,
       click_ref_param = excluded.click_ref_param,
+      program_key = excluded.program_key,
       updated_at = CURRENT_TIMESTAMP
   `).bind(
     programId,
@@ -114,6 +115,7 @@ export async function upsertCommercialConfiguration(args: {
     sourceUrl,
     args.program.lastVerifiedAt ?? null,
     clickRefParam,
+    args.program.key.trim(),
   ).run();
 
   const linkIds: string[] = [];

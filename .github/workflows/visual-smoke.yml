@@ -1,7 +1,7 @@
 name: visual-smoke
 
-# The workflow name is kept for existing branch-protection compatibility.
-# choosePC is now an API backend; public visual regression belongs to szpc-pages.
+# The workflow name is kept for branch-protection compatibility.
+# Public SZPC visual regression belongs to szpc-pages; this job checks only the workers.dev operations console.
 on:
   push:
     branches:
@@ -19,7 +19,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Verify API-only deployment boundary
+      - name: Install Japanese font for deterministic screenshots
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-cache -f
+      - name: Verify backend deployment boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -27,13 +32,52 @@ jobs:
           const fs = require('fs');
           const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
           if (config.main !== './apps/worker/src/api-entry.ts') throw new Error(`Unexpected Worker entry: ${config.main}`);
-          if (Array.isArray(config.routes) && config.routes.length) throw new Error('choosePC API backend must not own www.szpc.jp routes');
-          if (config.assets) throw new Error('choosePC API backend must not deploy the SZPC static UI');
-          if (config.workers_dev !== true) throw new Error('workers.dev transport must remain enabled until the API host is migrated');
+          if (Array.isArray(config.routes) && config.routes.length) throw new Error('choosePC backend must not own www.szpc.jp routes');
+          if (config.assets) throw new Error('choosePC backend must not deploy the public SZPC UI');
+          if (config.workers_dev !== true) throw new Error('workers.dev must remain enabled for the operations console and API transport');
           NODE
-      - name: Type-check API boundary
+      - name: Type-check API and console boundary
         run: npm run typecheck
-      - name: Run API boundary tests
+      - name: Run API and console tests
         run: npx vitest run --config vitest.config.ts apps/worker/test/api-entry.test.ts
-      - name: Wrangler API deployment dry-run
+      - name: Wrangler deployment dry-run
         run: npx wrangler deploy --dry-run
+      - name: Start local Worker directly with Wrangler
+        run: |
+          npx wrangler dev --local --ip 127.0.0.1 --port 8787 --show-interactive-dev-session=false > /tmp/choosepc-wrangler.log 2>&1 &
+          echo $! > /tmp/choosepc-wrangler.pid
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8787/ >/tmp/ops.html 2>/dev/null; then
+              grep -q "choosePC Operations" /tmp/ops.html && exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/choosepc-wrangler.log
+          exit 1
+      - name: Capture operations console desktop and mobile
+        run: |
+          mkdir -p visual-artifacts
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$CHROME" ]; then
+            echo "No Chrome/Chromium executable on runner"
+            exit 1
+          fi
+          "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1440,2800 --screenshot="$PWD/visual-artifacts/ops-desktop.png" http://127.0.0.1:8787/
+          "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=390,5200 --screenshot="$PWD/visual-artifacts/ops-mobile.png" http://127.0.0.1:8787/
+          "$CHROME" --headless --no-sandbox --disable-gpu --dump-dom http://127.0.0.1:8787/ > /tmp/ops-dom.html
+          test -s visual-artifacts/ops-desktop.png
+          test -s visual-artifacts/ops-mobile.png
+          grep -q "API利用状況" /tmp/ops-dom.html
+          grep -q "アフィリエイト・送客設定" /tmp/ops-dom.html
+          grep -q "API動作検証" /tmp/ops-dom.html
+      - name: Upload operations screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operations-console-${{ github.sha }}
+          path: visual-artifacts/*.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Show local Worker log on failure
+        if: failure()
+        run: cat /tmp/choosepc-wrangler.log || true
