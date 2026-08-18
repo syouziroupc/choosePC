@@ -1,5 +1,7 @@
 import app from "./browser-enhanced-entry";
 import production from "./production-entry";
+import { loadAdminOverview, recordApiRequest } from "./admin-store";
+import { opsConsoleCss, opsConsoleHtml, opsConsoleJs } from "./ops-console";
 import type { PersistenceEnv } from "./persistence";
 
 interface Env extends PersistenceEnv {
@@ -16,7 +18,7 @@ type ScheduledHandler = (controller: ScheduledController, env: Env, ctx: Executi
 
 const appFetch = app.fetch as unknown as AppFetch;
 const scheduled = production.scheduled as unknown as ScheduledHandler;
-const API_VERSION = "2026-08-18-static-frontend-v1";
+const API_VERSION = "2026-08-18-static-frontend-v2";
 const CLIENT_HEADER = "x-choosepc-client";
 const SESSION_COOKIE = "pc_assist_sid";
 const PUBLIC_API_PREFIX = "/api/v1/";
@@ -24,6 +26,19 @@ const ALLOWED_PRODUCTION_ORIGINS = new Set([
   "https://www.szpc.jp",
   "https://szpc.jp",
 ]);
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
+}
 
 function isPublicApi(pathname: string): boolean {
   return pathname.startsWith(PUBLIC_API_PREFIX);
@@ -63,6 +78,21 @@ function requestWithClientSession(request: Request): Request {
   cookies.push(`${SESSION_COOKIE}=${clientId}`);
   headers.set("cookie", cookies.join("; "));
   return new Request(request, { headers });
+}
+
+async function digest(value: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+}
+
+async function authorized(request: Request, secret?: string): Promise<boolean> {
+  if (!secret) return false;
+  const match = (request.headers.get("authorization") ?? "").match(/^Bearer\s+(.+)$/i);
+  if (!match?.[1]) return false;
+  const [actual, expected] = await Promise.all([digest(match[1]), digest(secret)]);
+  let difference = actual.length ^ expected.length;
+  const length = Math.max(actual.length, expected.length);
+  for (let index = 0; index < length; index += 1) difference |= (actual[index] ?? 0) ^ (expected[index] ?? 0);
+  return difference === 0;
 }
 
 function appendVary(headers: Headers, value: string): void {
@@ -115,7 +145,7 @@ function preflight(request: Request, origin: string): Response {
 
 function metadata(request: Request, env: Env): Response {
   const url = new URL(request.url);
-  return new Response(JSON.stringify({
+  return json({
     ok: true,
     service: "choosePC",
     mode: "api",
@@ -124,16 +154,8 @@ function metadata(request: Request, env: Env): Response {
     frontendOrigins: [...ALLOWED_PRODUCTION_ORIGINS],
     clientHeader: "X-ChoosePC-Client",
     persistenceConfigured: Boolean(env.DB),
-    uiHostedHere: false,
-  }), {
-    status: 200,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "x-choosepc-api-version": API_VERSION,
-      "x-robots-tag": "noindex, nofollow",
-      "x-content-type-options": "nosniff",
-    },
+    publicUiHostedHere: false,
+    operationsConsole: `${url.origin}/`,
   });
 }
 
@@ -148,9 +170,25 @@ async function enrichHealth(response: Response, env: Env): Promise<Response> {
       mode: "api",
       apiVersion: API_VERSION,
       persistenceConfigured: Boolean(env.DB),
+      publicUiHostedHere: false,
+      operationsConsole: "/",
     }), { status: response.status, statusText: response.statusText, headers });
   } catch {
     return response;
+  }
+}
+
+async function adminOverview(request: Request, env: Env): Promise<Response> {
+  if (!await authorized(request, env.COMMERCIAL_ADMIN_TOKEN)) return json({ error: "NOT_AUTHORIZED" }, 401);
+  if (!env.DB) return json({ error: "ADMIN_DB_UNAVAILABLE" }, 503);
+  try {
+    return json({ overview: await loadAdminOverview(env) });
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "admin_overview_error",
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return json({ error: "ADMIN_OVERVIEW_UNAVAILABLE" }, 503);
   }
 }
 
@@ -161,33 +199,27 @@ export default {
     const origin = allowedOrigin(originHeader);
     const publicApi = isPublicApi(url.pathname);
 
-    if ((url.pathname === "/" || url.pathname === "/api" || url.pathname === "/api/v1") && request.method === "GET") {
+    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/ops" || url.pathname === "/ops/")) {
+      return opsConsoleHtml();
+    }
+    if (request.method === "GET" && url.pathname === "/ops/app.css") return opsConsoleCss();
+    if (request.method === "GET" && url.pathname === "/ops/app.js") return opsConsoleJs();
+
+    if ((url.pathname === "/api" || url.pathname === "/api/v1") && request.method === "GET") {
       return withApiHeaders(metadata(request, env), origin, Boolean(originHeader));
+    }
+
+    if (url.pathname === "/api/internal/admin/overview" && request.method === "GET") {
+      return adminOverview(request, env);
     }
 
     if (!publicApi) {
       if (url.pathname.startsWith("/api/internal/")) return appFetch(requestWithClientSession(request), env, ctx);
-      return new Response(JSON.stringify({ error: "NOT_FOUND", service: "choosePC", mode: "api" }), {
-        status: 404,
-        headers: {
-          "content-type": "application/json; charset=utf-8",
-          "cache-control": "no-store",
-          "x-robots-tag": "noindex, nofollow",
-          "x-content-type-options": "nosniff",
-        },
-      });
+      return json({ error: "NOT_FOUND", service: "choosePC", mode: "api" }, 404);
     }
 
     if (originHeader && !origin) {
-      return new Response(JSON.stringify({ error: "ORIGIN_NOT_ALLOWED" }), {
-        status: 403,
-        headers: {
-          "content-type": "application/json; charset=utf-8",
-          "cache-control": "no-store",
-          "x-choosepc-api-version": API_VERSION,
-          "x-robots-tag": "noindex, nofollow",
-        },
-      });
+      return json({ error: "ORIGIN_NOT_ALLOWED" }, 403);
     }
 
     if (request.method === "OPTIONS") {
@@ -200,7 +232,14 @@ export default {
     if (url.pathname === "/api/v1/health" && request.method === "GET") {
       response = await enrichHealth(response, env);
     }
-    return withApiHeaders(response, origin, Boolean(originHeader));
+    const result = withApiHeaders(response, origin, Boolean(originHeader));
+    ctx.waitUntil(recordApiRequest({
+      env,
+      pathname: url.pathname,
+      method: request.method,
+      status: result.status,
+    }));
+    return result;
   },
 
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
