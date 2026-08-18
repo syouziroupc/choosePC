@@ -16,6 +16,14 @@
       "migrations_dir": "migrations"
     }
   ],
+  "secrets": {
+    "required": [
+      "MARKET_INGEST_TOKEN",
+      "OFFER_INGEST_TOKEN",
+      "COMMERCIAL_ADMIN_TOKEN",
+      "CONVERSION_IMPORT_TOKEN"
+    ]
+  },
   "ratelimits": [
     {
       "name": "URL_INSPECT_LIMITER",
