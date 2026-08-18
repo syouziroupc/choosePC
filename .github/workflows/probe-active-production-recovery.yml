@@ -1,0 +1,54 @@
+name: probe-active-production-recovery
+
+on:
+  push:
+    branches:
+      - release/force-production-v5-once
+    paths-ignore:
+      - debug/active-production-recovery.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: choosepc-active-production-recovery
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Capture active production response
+        shell: bash
+        run: |
+          set -u
+          ORIGIN='https://choosepc.syouziroupc.workers.dev'
+          for attempt in $(seq 1 24); do
+            root_code=$(curl -L -sS -o /tmp/root -w '%{http_code}' --max-time 10 "${ORIGIN}/?recovery=${GITHUB_SHA}-${attempt}" || echo 000)
+            meta_code=$(curl -L -sS -o /tmp/meta -w '%{http_code}' --max-time 10 "${ORIGIN}/api/v1?recovery=${GITHUB_SHA}-${attempt}" || echo 000)
+            health_code=$(curl -L -sS -o /tmp/health -w '%{http_code}' --max-time 10 "${ORIGIN}/api/v1/health?recovery=${GITHUB_SHA}-${attempt}" || echo 000)
+            if [ "$root_code" = 200 ] && [ "$meta_code" = 200 ] && [ "$health_code" = 200 ]; then
+              break
+            fi
+            sleep 5
+          done
+          mkdir -p debug
+          {
+            echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "probe_sha=${GITHUB_SHA}"
+            echo "root_http=${root_code}"
+            echo "meta_http=${meta_code}"
+            echo "health_http=${health_code}"
+            echo '--- root ---'; head -c 7000 /tmp/root 2>/dev/null || true; echo
+            echo '--- meta ---'; head -c 7000 /tmp/meta 2>/dev/null || true; echo
+            echo '--- health ---'; head -c 7000 /tmp/health 2>/dev/null || true; echo
+          } > debug/active-production-recovery.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add debug/active-production-recovery.txt
+          git commit -m 'ci: record active workers.dev recovery state' || true
+          git push origin HEAD:release/force-production-v5-once
