@@ -8,6 +8,14 @@
   "browser": {
     "binding": "BROWSER"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "choosepc-production",
+      "database_id": "eb1f9cc2-a0d7-467e-b139-939c6d56130d",
+      "migrations_dir": "migrations"
+    }
+  ],
   "ratelimits": [
     {
       "name": "URL_INSPECT_LIMITER",
