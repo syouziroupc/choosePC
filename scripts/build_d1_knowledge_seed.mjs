@@ -24,7 +24,7 @@ try {
   const source = await readFile(temp, "utf8");
   const lines = source
     .split(/\r?\n/)
-    .filter((line) => !/^\s*(BEGIN TRANSACTION|COMMIT;)\s*$/i.test(line));
+    .filter((line) => !/^\s*(BEGIN\s+TRANSACTION;?|COMMIT;)\s*$/i.test(line));
   const sanitized = `${lines.join("\n").replace(/\n+$/, "")}\n`;
   if (/\bBEGIN\s+TRANSACTION\b|^\s*COMMIT;\s*$/im.test(sanitized)) {
     throw new Error("D1 seed still contains an explicit transaction statement");
