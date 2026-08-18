@@ -1,18 +1,29 @@
 {
-  "ok": false,
+  "ok": true,
   "branch": "ops/provision-d1-affiliate-ready",
-  "commit": "655ff0b611829e191160f1f03753145791f83836",
+  "commit": "bed280f5cde39ca568f0972a5ae4460a172d778e",
   "accountId": "7cea58251b35319648343e0dd9f7cb76",
   "databaseName": "choosepc-production",
   "databaseId": "eb1f9cc2-a0d7-467e-b139-939c6d56130d",
   "migrationsApplied": true,
-  "seedApplied": false,
-  "cpuCount": null,
-  "gpuCount": null,
-  "commercialProgramCount": null,
-  "conversionCount": null,
-  "runtimeSecretsConfigured": [],
-  "credentials": null,
-  "activeProductionVerified": false,
-  "error": "/opt/buildhome/.asdf/installs/nodejs/24.18.0/bin/node scripts/build_d1_knowledge_seed.mjs --git-sha 655ff0b611829e191160f1f03753145791f83836 --output /tmp/choosepc-knowledge-seed.sql failed with status 1"
+  "seedApplied": true,
+  "cpuCount": 374,
+  "gpuCount": 243,
+  "commercialProgramCount": 0,
+  "conversionCount": 0,
+  "runtimeSecretsConfigured": [
+    "MARKET_INGEST_TOKEN",
+    "OFFER_INGEST_TOKEN",
+    "COMMERCIAL_ADMIN_TOKEN",
+    "CONVERSION_IMPORT_TOKEN"
+  ],
+  "credentials": {
+    "scheme": "RSA-OAEP-SHA256+AES-256-GCM",
+    "wrappedKey": "DLpVUnXOT5ZSx/Yuvcie8nKG4jr8fByiNnnGGjmwVwaixkxZTGClnPfezY7uYF190gdAWnY/NOFHc9hA6ddtD0bRO14Cv2cKeKYfmSi403eysJl4G++zmYA+5gFg/JY+vJT4MZeQQofR1X65PCJLnYgXOYp4J4cnoheTB+jzxAECDMYZtVnug/vQGzZprZ7pR/sO5OByp9Yf8sNShMINjao24Zq7ujRy48VnK98N5nVgnafcGTG40WrrZRl/sRan6o9wYIRvp6MuPNSPYljLReyya3bnlpQ1jgx0m45PAW836eknVhewtF8E8Yehn0/aqUra8J1EvWUNvInW+nCnI2gIfMn7mHIODBK7qjYqDUJKq9iOwXg/ineiMglUROGlB+Cr02KrUdJnuDwyuVBVfwuLSKi8jud+zzI2QkFJ50xznfWUuVecamaBBWZGOiNXekM2/eDXtLFrnCFSN5Is0lbf+S0Tfrs8lOXJ2lQ3jHkQKvGYMuCQyPhzmD5K4O/S",
+    "iv": "fOxj0Sk9CE+dq1k4",
+    "tag": "6e8Q+jEXw+2gdxzsMz03Xg==",
+    "ciphertext": "BZvSnQIg6GqVLTYkX5TRYhnKgj8JJdA4/B+HFtiYmRGDzc2m+A8O3JyZXi+VYOfIOQIKQqJj0SOccToftaCzQMB4LLWi5+Eq/mj4PktGZc8dqY8H/yAo56MDRykP7UcnFMmNoTP+sibtDvCRa12os1iKqKRIZ6KJqVSTT8JlVYXKGIn7NSCKe68+xzq0ztC/N4Mw1+LmXqrXnwWFhmo1eERO0dvCbm0IHp0DluqySkNjbUHXD9u32t7amehIjbrqSGH8BU2vfNDHPjNY3uQjV3/cwaVldjx/TQKx7wn1vJX0jwfZYpjRqEzJs7KwPyBPPP49W8ILNBiTQUcC2wehEym6Kj+hM5D4nsJHjm+EgWM0PxHG2V/IaOAJHsAv4IUZuX3bMBgM9dSvB5UtYrEPKYvBM755/1GfPSY5TBIbTDh7wxe8EDrz/hD65Ktl/w2SP2joc4/nrvbFJkOcTq2RetyUUHQzpJ4xKKzY+x23G4FBI5V+BWBlwCXGbvkaINWuFY3swRmiY69ib9CqnvbKQSU="
+  },
+  "activeProductionVerified": true,
+  "error": null
 }
