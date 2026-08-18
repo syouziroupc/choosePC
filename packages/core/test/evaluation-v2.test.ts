@@ -33,7 +33,25 @@ function evaluate(pc: NormalizedPC, useCase = "student", fairPrice = 50000) {
   return evaluatePc(input);
 }
 
-describe("evaluation engine v0.2 gates", () => {
+describe("evaluation engine v0.3 gates", () => {
+  it("returns an auditable 100-point allocation and keeps evidence coverage separate", () => {
+    const result = evaluate(basePc(), "student", 50000);
+    expect(result.scoreBreakdown?.maximumPoints).toBe(100);
+    expect(result.scoreBreakdown?.components.map((item) => item.maxPoints)).toEqual([25, 30, 20, 10, 15]);
+    expect(result.scoreBreakdown?.components.reduce((sum, item) => sum + item.maxPoints, 0)).toBe(100);
+    expect(result.scoreBreakdown?.totalPoints).toBe(result.scores.overall);
+    expect(result.scoreBreakdown?.components.find((item) => item.key === "performance")?.factors.length).toBeGreaterThan(2);
+  });
+
+  it("still returns a numeric score while marking a missing market as unscored price evidence", () => {
+    const pc = basePc({ commerce: { priceJpy: 45000, warrantyDays: 90 } });
+    const result = evaluatePc({ pc, profile: USE_CASES.student, hardware: resolveHardware(pc.cpu?.raw, pc.gpu?.raw), market: null });
+    const price = result.scoreBreakdown?.components.find((item) => item.key === "price");
+    expect(Number.isFinite(result.scores.overall)).toBe(true);
+    expect(price?.status).toBe("unavailable");
+    expect(price?.coverage).toBe(0);
+  });
+
   it("does not recommend a machine that fails an essential requirement even when cheap", () => {
     const pc = basePc({ memory: { sizeGb: 4, upgradeable: false }, commerce: { priceJpy: 10000, warrantyDays: 90 } });
     const result = evaluate(pc, "student", 45000);
