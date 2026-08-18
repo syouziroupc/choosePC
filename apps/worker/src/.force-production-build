@@ -1,4 +1,4 @@
 force_active_deployment=true
 api_version=2026-08-18-static-frontend-v4
-trigger=2026-08-18T16:23:00+09:00
-postbuild_guard=workers_ci_only
+trigger=2026-08-18T16:26:00+09:00
+postbuild_action=remove_generated_config_then_deploy_api_only
