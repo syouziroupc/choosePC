@@ -20,7 +20,7 @@ jobs:
     env:
       API_ORIGIN: https://choosepc.syouziroupc.workers.dev
       FRONTEND_ORIGIN: https://www.szpc.jp
-      REQUIRED_API_VERSION: 2026-08-18-static-frontend-v3
+      REQUIRED_API_VERSION: 2026-08-18-static-frontend-v4
     steps:
       - uses: actions/checkout@v6
       - name: Verify actual workers.dev deployment
