@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     env:
-      TARGET_COMMIT: 655ff0b611829e191160f1f03753145791f83836
+      TARGET_COMMIT: bed280f5cde39ca568f0972a5ae4460a172d778e
       ORIGIN: https://ops-provision-d1-affiliate-ready-choosepc.syouziroupc.workers.dev
     steps:
       - uses: actions/checkout@v6
