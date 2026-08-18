@@ -1,7 +1,7 @@
-checked_at=2026-08-18T07:13:41Z
-source_sha=9351b70d9ba9c51db857e6088395e659b5c04751
+checked_at=2026-08-18T07:21:00Z
+source_sha=f74c06a6a950f9575b67ffefe86e245b45014780
 root_http=200
-meta_http=404
+meta_http=200
 health_http=200
 --- root ---
 <!doctype html>
@@ -26,6 +26,6 @@ health_http=200
 </html>
 
 --- meta ---
-{"error":"NOT_FOUND"}
+{"ok":true,"service":"choosePC","mode":"api","apiVersion":"2026-08-18-static-frontend-v4","apiBase":"https://choosepc.syouziroupc.workers.dev/api/v1","frontendOrigins":["https://www.szpc.jp","https://szpc.jp"],"clientHeader":"X-ChoosePC-Client","persistenceConfigured":false,"publicUiHostedHere":false,"operationsConsole":"https://choosepc.syouziroupc.workers.dev/"}
 --- health ---
-{"ok":true,"service":"choosePC","engine":"0.2.1","uiRevision":"2026-08-15-reference-ui-v1"}
+{"ok":true,"service":"choosePC","engine":"0.2.1","uiRevision":"2026-08-15-reference-ui-v1","mode":"api","apiVersion":"2026-08-18-static-frontend-v4","persistenceConfigured":false,"publicUiHostedHere":false,"operationsConsole":"/"}
