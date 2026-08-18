@@ -1,0 +1,27 @@
+checked_at=2026-08-18T07:35:10Z
+probe_sha=ee25dcbad08232a95a44252d23e52ef3d7934b57
+found=1
+http=200
+path=/cloudflare-recovery.json
+--- diagnostic ---
+{
+  "at": "2026-08-18T07:33:33.186Z",
+  "branch": "release/force-production-v5-once",
+  "commit": "33ba7a56c6d6a3a1d7fb4487acf35c8ddc538d91",
+  "expectedVersion": "2026-08-18-static-frontend-v4",
+  "directDeploy": {
+    "status": 0,
+    "error": null
+  },
+  "liveAfterDirectDeploy": {
+    "matched": false,
+    "root": 200,
+    "metadata": 200,
+    "health": 200
+  },
+  "buildsApi": {
+    "apiTokenPresent": true,
+    "triggerAccepted": false,
+    "apiError": "/builds/workers: Authentication error"
+  }
+}
