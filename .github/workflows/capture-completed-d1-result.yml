@@ -1,0 +1,43 @@
+name: capture-completed-d1-result
+
+on:
+  push:
+    branches: [ops/capture-d1-result]
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      TARGET_COMMIT: 655ff0b611829e191160f1f03753145791f83836
+      ORIGIN: https://ops-provision-d1-affiliate-ready-choosepc.syouziroupc.workers.dev
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Read exact Cloudflare provisioning evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          for attempt in $(seq 1 36); do
+            for path in '/provisioning-result.json' '/pc-check/provisioning-result.json'; do
+              code=$(curl -L -sS -o /tmp/result.json -w '%{http_code}' --max-time 10 "${ORIGIN}${path}?capture=${GITHUB_SHA}-${attempt}" || echo 000)
+              if [ "$code" = 200 ] && grep -q "\"commit\": \"${TARGET_COMMIT}\"" /tmp/result.json; then
+                found=1
+                break 2
+              fi
+            done
+            sleep 5
+          done
+          test "$found" = 1
+          mkdir -p debug
+          cp /tmp/result.json debug/d1-provisioning-final.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add debug/d1-provisioning-final.json
+          git commit -m 'ops: record completed D1 provisioning evidence'
+          git push origin HEAD:ops/capture-d1-result
