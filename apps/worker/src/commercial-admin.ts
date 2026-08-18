@@ -95,6 +95,16 @@ async function prepareLinks(
   return prepared;
 }
 
+async function executeStatements(db: D1Database, statements: D1PreparedStatement[]): Promise<void> {
+  const batch = (db as D1Database & { batch?: (items: D1PreparedStatement[]) => Promise<unknown> }).batch;
+  if (typeof batch === "function") {
+    await batch.call(db, statements);
+    return;
+  }
+  // D1 always exposes batch(). This fallback exists only for minimal test/local adapters.
+  for (const statement of statements) await statement.run();
+}
+
 /**
  * Writes only post-ranking commercial configuration. This module is not imported by the neutral
  * offer loader or evaluation packages and therefore cannot supply commission data to ranking.
@@ -162,7 +172,7 @@ export async function upsertCommercialConfiguration(args: {
     `).bind(link.linkId, link.offerId, programId, link.destinationUrl));
   }
 
-  await db.batch(statements);
+  await executeStatements(db, statements);
 
   return {
     programId,
