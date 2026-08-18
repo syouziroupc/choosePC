@@ -175,8 +175,8 @@ async function main() {
     diagnostic.migrationsApplied = true;
 
     const seedPath = "/tmp/choosepc-knowledge-seed.sql";
-    node(["scripts/build_knowledge_seed.mjs", "--git-sha", process.env.WORKERS_CI_COMMIT_SHA ?? "workers-build", "--output", seedPath]);
-    npx(["wrangler", "d1", "execute", DB_NAME, "--remote", `--file=${seedPath}`, "--yes", "--config", "wrangler.jsonc"]);
+    node(["scripts/build_d1_knowledge_seed.mjs", "--git-sha", process.env.WORKERS_CI_COMMIT_SHA ?? "workers-build", "--output", seedPath]);
+    npx(["wrangler", "d1", "execute", DB_NAME, "--remote", `--file=${seedPath}`, "--yes", "--config", "wrangler.jsonc"], { capture: true });
     diagnostic.seedApplied = true;
 
     const verifyText = npx([
