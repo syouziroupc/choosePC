@@ -14,6 +14,28 @@ function makeEnv() {
   };
 }
 
+function makeAdminEnv() {
+  const { env, limit } = makeEnv();
+  const DB = {
+    prepare(sql: string) {
+      return {
+        async first() {
+          if (/FROM api_request_metrics/i.test(sql)) return { today: 2, last7Days: 5, last30Days: 8 };
+          if (/outbound_clicks/i.test(sql)) {
+            return { outbound30Days: 0, affiliateOutbound30Days: 0, conversions30Days: 0, commission30DaysJpy: 0 };
+          }
+          return null;
+        },
+        async all() { return { results: [] }; },
+      };
+    },
+  };
+  return {
+    env: Object.assign(env as object, { DB, COMMERCIAL_ADMIN_TOKEN: "test-admin-secret" }) as EnvShape,
+    limit,
+  };
+}
+
 function context() {
   return { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
 }
@@ -55,6 +77,21 @@ describe("API backend with workers.dev operations console", () => {
     const body = await response.json() as { error?: string };
     expect(response.status).toBe(401);
     expect(body.error).toBe("NOT_AUTHORIZED");
+  });
+
+  it("returns the admin overview in the exact shape consumed by the operations console", async () => {
+    const { env } = makeAdminEnv();
+    const response = await worker.fetch(new Request("https://choosepc.example/api/internal/admin/overview", {
+      headers: { authorization: "Bearer test-admin-secret" },
+    }), env, context());
+    const body = await response.json() as Record<string, unknown> & {
+      requests?: { today?: number; last7Days?: number; last30Days?: number };
+      commercial?: { programs?: unknown[] };
+    };
+    expect(response.status).toBe(200);
+    expect(body).not.toHaveProperty("overview");
+    expect(body.requests).toEqual(expect.objectContaining({ today: 2, last7Days: 5, last30Days: 8 }));
+    expect(body.commercial?.programs).toEqual([]);
   });
 
   it("allows www.szpc.jp to read public API responses with exact-origin CORS", async () => {
