@@ -1,7 +1,7 @@
 {
   "ok": false,
   "branch": "ops/provision-d1-affiliate-ready",
-  "commit": "a0926233934ec76e26b55a48f294054e3a906703",
+  "commit": "ea7c214f8a84e816e8456b49ac279651ff9a129b",
   "accountId": "7cea58251b35319648343e0dd9f7cb76",
   "databaseName": "choosepc-production",
   "databaseId": "eb1f9cc2-a0d7-467e-b139-939c6d56130d",
