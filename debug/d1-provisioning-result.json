@@ -1,18 +1,1 @@
-{
-  "ok": false,
-  "branch": "ops/provision-d1-affiliate-ready",
-  "commit": "ea7c214f8a84e816e8456b49ac279651ff9a129b",
-  "accountId": "7cea58251b35319648343e0dd9f7cb76",
-  "databaseName": "choosepc-production",
-  "databaseId": "eb1f9cc2-a0d7-467e-b139-939c6d56130d",
-  "migrationsApplied": true,
-  "seedApplied": false,
-  "cpuCount": null,
-  "gpuCount": null,
-  "commercialProgramCount": null,
-  "conversionCount": null,
-  "runtimeSecretsConfigured": [],
-  "credentials": null,
-  "activeProductionVerified": false,
-  "error": "npx wrangler d1 execute choosepc-production --remote --file=/tmp/choosepc-knowledge-seed.sql --yes --config wrangler.jsonc failed with status 1"
-}
+{"ok":false,"captureError":"target provisioning diagnostic not found","expectedCommit":"a1a6ca2831c50acaed72f6b6046cb8c5bb1da932","http":"200"}
