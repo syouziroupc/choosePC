@@ -28,6 +28,12 @@ export interface StoredCommercialConfiguration {
 
 type OfferMerchantRow = { merchant: string };
 
+type PreparedCommercialLink = {
+  offerId: string;
+  destinationUrl: string;
+  linkId: string;
+};
+
 function normalizeMerchant(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -68,9 +74,34 @@ async function assertOfferMerchant(db: D1Database, offerId: string, expectedMerc
   }
 }
 
+async function prepareLinks(
+  db: D1Database,
+  programId: string,
+  expectedMerchant: string,
+  links: readonly CommercialLinkInput[],
+): Promise<PreparedCommercialLink[]> {
+  const seen = new Set<string>();
+  const prepared: PreparedCommercialLink[] = [];
+  for (const link of links) {
+    if (seen.has(link.offerId)) throw new Error("COMMERCIAL_DUPLICATE_OFFER_LINK");
+    seen.add(link.offerId);
+    await assertOfferMerchant(db, link.offerId, expectedMerchant);
+    prepared.push({
+      offerId: link.offerId,
+      destinationUrl: safeHttpsUrl(link.destinationUrl),
+      linkId: `attr-${(await sha256Hex(`${link.offerId}\n${programId}`)).slice(0, 40)}`,
+    });
+  }
+  return prepared;
+}
+
 /**
  * Writes only post-ranking commercial configuration. This module is not imported by the neutral
  * offer loader or evaluation packages and therefore cannot supply commission data to ranking.
+ *
+ * The program row and its complete attribution-link set are committed in one D1 batch. Updating a
+ * program therefore replaces the prior link set instead of leaving stale affiliate destinations
+ * behind when a link is removed in the operations console.
  */
 export async function upsertCommercialConfiguration(args: {
   env: PersistenceEnv;
@@ -80,65 +111,62 @@ export async function upsertCommercialConfiguration(args: {
   const db = args.env.DB;
   if (!db) throw new Error("COMMERCIAL_DB_UNAVAILABLE");
 
-  for (const link of args.links) await assertOfferMerchant(db, link.offerId, args.program.merchant);
-
   const normalizedMerchant = normalizeMerchant(args.program.merchant);
   const normalizedKey = args.program.key.trim().toLowerCase();
   const programId = `program-${(await sha256Hex(`${normalizedMerchant}\n${args.program.programType}\n${normalizedKey}`)).slice(0, 40)}`;
   const sourceUrl = args.program.sourceUrl ? safeHttpsUrl(args.program.sourceUrl) : null;
   const commission = commissionJson(args.program.commissionMetadata);
   const clickRefParam = safeClickRefParam(args.program.clickRefParam);
+  const links = await prepareLinks(db, programId, args.program.merchant, args.links);
 
-  await db.prepare(`
-    INSERT INTO commercial_programs (
-      id, merchant, program_type, status, commission_json, disclosure_text,
-      source_url, last_verified_at, click_ref_param, program_key, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(id) DO UPDATE SET
-      merchant = excluded.merchant,
-      program_type = excluded.program_type,
-      status = excluded.status,
-      commission_json = excluded.commission_json,
-      disclosure_text = excluded.disclosure_text,
-      source_url = excluded.source_url,
-      last_verified_at = excluded.last_verified_at,
-      click_ref_param = excluded.click_ref_param,
-      program_key = excluded.program_key,
-      updated_at = CURRENT_TIMESTAMP
-  `).bind(
-    programId,
-    args.program.merchant.trim(),
-    args.program.programType,
-    args.program.status,
-    commission,
-    args.program.disclosureText?.trim() || null,
-    sourceUrl,
-    args.program.lastVerifiedAt ?? null,
-    clickRefParam,
-    args.program.key.trim(),
-  ).run();
+  const statements: D1PreparedStatement[] = [
+    db.prepare(`
+      INSERT INTO commercial_programs (
+        id, merchant, program_type, status, commission_json, disclosure_text,
+        source_url, last_verified_at, click_ref_param, program_key, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        merchant = excluded.merchant,
+        program_type = excluded.program_type,
+        status = excluded.status,
+        commission_json = excluded.commission_json,
+        disclosure_text = excluded.disclosure_text,
+        source_url = excluded.source_url,
+        last_verified_at = excluded.last_verified_at,
+        click_ref_param = excluded.click_ref_param,
+        program_key = excluded.program_key,
+        updated_at = CURRENT_TIMESTAMP
+    `).bind(
+      programId,
+      args.program.merchant.trim(),
+      args.program.programType,
+      args.program.status,
+      commission,
+      args.program.disclosureText?.trim() || null,
+      sourceUrl,
+      args.program.lastVerifiedAt ?? null,
+      clickRefParam,
+      args.program.key.trim(),
+    ),
+    db.prepare("DELETE FROM attribution_links WHERE program_id = ?").bind(programId),
+  ];
 
-  const linkIds: string[] = [];
-  for (const link of args.links) {
-    const destinationUrl = safeHttpsUrl(link.destinationUrl);
-    const linkId = `attr-${(await sha256Hex(`${link.offerId}\n${programId}`)).slice(0, 40)}`;
-    await db.prepare("DELETE FROM attribution_links WHERE offer_id = ? AND program_id = ? AND id <> ?")
-      .bind(link.offerId, programId, linkId)
-      .run();
-    await db.prepare(`
+  for (const link of links) {
+    statements.push(db.prepare(`
       INSERT INTO attribution_links (id, offer_id, program_id, destination_url)
       VALUES (?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         offer_id = excluded.offer_id,
         program_id = excluded.program_id,
         destination_url = excluded.destination_url
-    `).bind(linkId, link.offerId, programId, destinationUrl).run();
-    linkIds.push(linkId);
+    `).bind(link.linkId, link.offerId, programId, link.destinationUrl));
   }
+
+  await db.batch(statements);
 
   return {
     programId,
-    linkIds,
-    linkedOfferIds: args.links.map((link) => link.offerId),
+    linkIds: links.map((link) => link.linkId),
+    linkedOfferIds: links.map((link) => link.offerId),
   };
 }
