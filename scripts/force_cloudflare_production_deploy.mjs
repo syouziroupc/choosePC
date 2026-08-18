@@ -1,3 +1,5 @@
+import { existsSync, rmSync } from "node:fs";
+import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const workersCi = process.env.WORKERS_CI === "1";
@@ -8,9 +10,17 @@ if (!workersCi) {
   process.exit(0);
 }
 
-console.log(`[force-production] deploying choosepc from Cloudflare Workers Builds branch ${branch || "unknown"}`);
+const generatedRedirect = resolve(".wrangler/deploy/config.json");
+if (existsSync(generatedRedirect)) {
+  rmSync(generatedRedirect, { force: true });
+  console.log(`[force-production] removed generated Wrangler redirect: ${generatedRedirect}`);
+} else {
+  console.log("[force-production] generated Wrangler redirect was not present");
+}
+
+console.log(`[force-production] deploying API-only choosepc from wrangler.jsonc; branch=${branch || "unknown"}`);
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
-const result = spawnSync(npx, ["wrangler", "deploy", "--keep-vars"], {
+const result = spawnSync(npx, ["wrangler", "deploy", "--config", "wrangler.jsonc", "--keep-vars"], {
   stdio: "inherit",
   env: process.env,
 });
@@ -21,4 +31,4 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1);
 }
 
-console.log("[force-production] active deployment command completed");
+console.log("[force-production] API-only active deployment completed; generated redirect remains removed for the Cloudflare deploy step");
