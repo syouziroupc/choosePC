@@ -1,0 +1,18 @@
+{
+  "ok": false,
+  "branch": "ops/provision-d1-affiliate-ready",
+  "commit": "a0926233934ec76e26b55a48f294054e3a906703",
+  "accountId": "7cea58251b35319648343e0dd9f7cb76",
+  "databaseName": "choosepc-production",
+  "databaseId": "eb1f9cc2-a0d7-467e-b139-939c6d56130d",
+  "migrationsApplied": true,
+  "seedApplied": false,
+  "cpuCount": null,
+  "gpuCount": null,
+  "commercialProgramCount": null,
+  "conversionCount": null,
+  "runtimeSecretsConfigured": [],
+  "credentials": null,
+  "activeProductionVerified": false,
+  "error": "npx wrangler d1 execute choosepc-production --remote --file=/tmp/choosepc-knowledge-seed.sql --yes --config wrangler.jsonc failed with status 1"
+}
