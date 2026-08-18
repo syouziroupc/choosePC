@@ -19,6 +19,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Install Japanese font for deterministic screenshots
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-cache -f
       - name: Verify backend deployment boundary
         shell: bash
         run: |
@@ -57,8 +62,8 @@ jobs:
             echo "No Chrome/Chromium executable on runner"
             exit 1
           fi
-          "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1440,1800 --screenshot="$PWD/visual-artifacts/ops-desktop.png" http://127.0.0.1:8787/
-          "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=390,1800 --screenshot="$PWD/visual-artifacts/ops-mobile.png" http://127.0.0.1:8787/
+          "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1440,2800 --screenshot="$PWD/visual-artifacts/ops-desktop.png" http://127.0.0.1:8787/
+          "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=390,5200 --screenshot="$PWD/visual-artifacts/ops-mobile.png" http://127.0.0.1:8787/
           "$CHROME" --headless --no-sandbox --disable-gpu --dump-dom http://127.0.0.1:8787/ > /tmp/ops-dom.html
           test -s visual-artifacts/ops-desktop.png
           test -s visual-artifacts/ops-mobile.png
