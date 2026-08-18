@@ -78,7 +78,7 @@ jobs:
             `api_version=${apiVersion}\ncpu_count=${countJsonEntries('knowledge/hardware/cpu')}\ngpu_count=${countJsonEntries('knowledge/hardware/gpu')}\n`);
           NODE
 
-      - name: Verify Cloudflare API converges to this exact source
+      - name: Verify Cloudflare operations/API converges to this exact source
         if: steps.freshness.outputs.promote == 'true'
         shell: bash
         env:
@@ -88,7 +88,9 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 240); do
-            rm -f /tmp/meta.json /tmp/health.json /tmp/catalog.json /tmp/health.headers
+            rm -f /tmp/ops.html /tmp/meta.json /tmp/health.json /tmp/catalog.json /tmp/health.headers
+            curl --fail --silent --show-error --location --max-time 10 -H 'Cache-Control: no-cache' \
+              "${API_ORIGIN}/?smoke=${GITHUB_SHA}" -o /tmp/ops.html || true
             curl --fail --silent --show-error --location --max-time 10 \
               -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
               "${API_ORIGIN}/api/v1?smoke=${GITHUB_SHA}" -o /tmp/meta.json || true
@@ -99,15 +101,17 @@ jobs:
               -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND_ORIGIN}" \
               "${API_ORIGIN}/api/v1/catalog?smoke=${GITHUB_SHA}" -o /tmp/catalog.json || true
 
-            if [ -s /tmp/meta.json ] && [ -s /tmp/health.json ] && [ -s /tmp/catalog.json ] && [ -s /tmp/health.headers ]; then
-              if REQUIRED_API_VERSION="$REQUIRED_API_VERSION" REQUIRED_CPU_COUNT="$REQUIRED_CPU_COUNT" REQUIRED_GPU_COUNT="$REQUIRED_GPU_COUNT" node <<'NODE'
+            if [ -s /tmp/ops.html ] && [ -s /tmp/meta.json ] && [ -s /tmp/health.json ] && [ -s /tmp/catalog.json ] && [ -s /tmp/health.headers ]; then
+              if grep -q 'choosePC Operations' /tmp/ops.html \
+                && REQUIRED_API_VERSION="$REQUIRED_API_VERSION" REQUIRED_CPU_COUNT="$REQUIRED_CPU_COUNT" REQUIRED_GPU_COUNT="$REQUIRED_GPU_COUNT" node <<'NODE'
           const fs = require('fs');
           const meta = JSON.parse(fs.readFileSync('/tmp/meta.json', 'utf8'));
           const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
           const catalog = JSON.parse(fs.readFileSync('/tmp/catalog.json', 'utf8'));
           const cpu = Array.isArray(catalog.cpus) ? catalog.cpus.length : -1;
           const gpu = Array.isArray(catalog.gpus) ? catalog.gpus.length : -1;
-          if (meta.service !== 'choosePC' || meta.mode !== 'api' || meta.uiHostedHere !== false) process.exit(1);
+          if (meta.service !== 'choosePC' || meta.mode !== 'api' || meta.publicUiHostedHere !== false) process.exit(1);
+          if (typeof meta.operationsConsole !== 'string') process.exit(1);
           if (meta.apiVersion !== process.env.REQUIRED_API_VERSION) process.exit(1);
           if (health.ok !== true || health.service !== 'choosePC' || health.mode !== 'api') process.exit(1);
           if (health.apiVersion !== process.env.REQUIRED_API_VERSION) process.exit(1);
@@ -115,7 +119,7 @@ jobs:
           NODE
               then
                 if tr -d '\r' < /tmp/health.headers | grep -qi "^access-control-allow-origin: ${FRONTEND_ORIGIN}$"; then
-                  echo "Cloudflare API verified: version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
+                  echo "Cloudflare operations/API verified: version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
                   exit 0
                 fi
               fi
@@ -123,5 +127,5 @@ jobs:
             sleep 5
           done
 
-          echo "Cloudflare API did not converge to version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
+          echo "Cloudflare operations/API did not converge to version=${REQUIRED_API_VERSION}, CPUs=${REQUIRED_CPU_COUNT}, GPUs=${REQUIRED_GPU_COUNT}"
           exit 1
