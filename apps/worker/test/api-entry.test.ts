@@ -31,7 +31,10 @@ describe("API backend with workers.dev operations console", () => {
     expect(body).toContain("API利用状況");
     expect(body).toContain("アフィリエイト・送客設定");
     expect(body).toContain("API動作検証");
-    expect(body).not.toContain("COMMERCIAL_ADMIN_TOKEN\"");
+    expect(body).toContain('id="admin-token" type="password"');
+    expect(body).toContain('autocomplete="current-password"');
+    expect(body).toContain('placeholder="COMMERCIAL_ADMIN_TOKEN"');
+    expect(body).not.toMatch(/value=["'][^"']+['"][^>]*id=["']admin-token/i);
   });
 
   it("keeps API metadata at /api/v1 instead of the console", async () => {
