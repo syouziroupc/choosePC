@@ -1,0 +1,18 @@
+{
+  "ok": false,
+  "branch": "ops/provision-d1-affiliate-ready",
+  "commit": "655ff0b611829e191160f1f03753145791f83836",
+  "accountId": "7cea58251b35319648343e0dd9f7cb76",
+  "databaseName": "choosepc-production",
+  "databaseId": "eb1f9cc2-a0d7-467e-b139-939c6d56130d",
+  "migrationsApplied": true,
+  "seedApplied": false,
+  "cpuCount": null,
+  "gpuCount": null,
+  "commercialProgramCount": null,
+  "conversionCount": null,
+  "runtimeSecretsConfigured": [],
+  "credentials": null,
+  "activeProductionVerified": false,
+  "error": "/opt/buildhome/.asdf/installs/nodejs/24.18.0/bin/node scripts/build_d1_knowledge_seed.mjs --git-sha 655ff0b611829e191160f1f03753145791f83836 --output /tmp/choosepc-knowledge-seed.sql failed with status 1"
+}
