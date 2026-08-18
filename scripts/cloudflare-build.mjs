@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 const RELEASE_BRANCH = "release/force-production-v5-once";
-const EXPECTED_VERSION = "2026-08-18-static-frontend-v5";
+const EXPECTED_VERSION = "2026-08-18-static-frontend-v4";
 const PRODUCTION_ORIGIN = "https://choosepc.syouziroupc.workers.dev";
 const ACCOUNT_ID = "7cea58251b35319648343e0dd9f7cb76";
 
