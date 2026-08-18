@@ -1,0 +1,31 @@
+checked_at=2026-08-18T07:35:52Z
+probe_sha=15cf40f22acf499bb8713d4c087dab54866a3d19
+root_http=200
+meta_http=200
+health_http=200
+--- root ---
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#12344a" />
+    <meta name="description" content="正二郎商事のPC購入・買い替え・売却チェック。商品URLまたはPCスペックから、用途に足りるか、価格が妥当か、買い替えが必要かを確認できます。" />
+    <link rel="canonical" href="https://www.szpc.jp/pc-check/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://www.szpc.jp/pc-check/" />
+    <meta property="og:title" content="PC購入・買い替え診断 | 正二郎商事株式会社" />
+    <meta property="og:description" content="PCを買う前、買い替える前、売る前に。用途・性能・価格を分けて確認します。" />
+    <title>PC購入・買い替え診断 | 正二郎商事株式会社</title>
+    <script type="module" crossorigin src="/pc-check/assets/index-B_7buCpS.js"></script>
+    <link rel="stylesheet" crossorigin href="/pc-check/assets/index-Dd3vCIGo.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+
+--- meta ---
+{"ok":true,"service":"choosePC","mode":"api","apiVersion":"2026-08-18-static-frontend-v4","apiBase":"https://choosepc.syouziroupc.workers.dev/api/v1","frontendOrigins":["https://www.szpc.jp","https://szpc.jp"],"clientHeader":"X-ChoosePC-Client","persistenceConfigured":false,"publicUiHostedHere":false,"operationsConsole":"https://choosepc.syouziroupc.workers.dev/"}
+--- health ---
+{"ok":true,"service":"choosePC","engine":"0.2.1","uiRevision":"2026-08-15-reference-ui-v1","mode":"api","apiVersion":"2026-08-18-static-frontend-v4","persistenceConfigured":false,"publicUiHostedHere":false,"operationsConsole":"/"}
