@@ -31,7 +31,11 @@ function makeAdminEnv() {
     },
   };
   return {
-    env: Object.assign(env as object, { DB, COMMERCIAL_ADMIN_TOKEN: "test-admin-secret" }) as EnvShape,
+    env: {
+      ...(env as unknown as Record<string, unknown>),
+      DB,
+      COMMERCIAL_ADMIN_TOKEN: "test-admin-secret",
+    } as unknown as EnvShape,
     limit,
   };
 }
