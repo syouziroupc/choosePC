@@ -15,6 +15,7 @@ type EndpointMetricRow = {
 
 type ProgramRow = {
   id: string;
+  programKey: string | null;
   merchant: string;
   programType: string;
   status: string;
@@ -147,6 +148,7 @@ export async function loadAdminOverview(env: PersistenceEnv): Promise<{
   const programsResult = await db.prepare(`
     SELECT
       cp.id,
+      cp.program_key AS programKey,
       cp.merchant,
       cp.program_type AS programType,
       cp.status,
