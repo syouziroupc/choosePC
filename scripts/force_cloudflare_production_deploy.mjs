@@ -1,15 +1,14 @@
 import { spawnSync } from "node:child_process";
 
-const expectedBranch = "release/force-workers-build-deploy-v4";
 const workersCi = process.env.WORKERS_CI === "1";
 const branch = process.env.WORKERS_CI_BRANCH ?? "";
 
-if (!workersCi || branch !== expectedBranch) {
-  console.log(`[force-production] skipped: WORKERS_CI=${process.env.WORKERS_CI ?? ""} branch=${branch}`);
+if (!workersCi) {
+  console.log(`[force-production] skipped outside Cloudflare Workers Builds: branch=${branch}`);
   process.exit(0);
 }
 
-console.log(`[force-production] deploying choosepc from Cloudflare Workers Builds branch ${branch}`);
+console.log(`[force-production] deploying choosepc from Cloudflare Workers Builds branch ${branch || "unknown"}`);
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 const result = spawnSync(npx, ["wrangler", "deploy", "--keep-vars"], {
   stdio: "inherit",
