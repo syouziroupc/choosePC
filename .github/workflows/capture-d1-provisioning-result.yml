@@ -1,0 +1,52 @@
+name: capture-d1-provisioning-result
+
+on:
+  push:
+    branches: [ops/provision-d1-affiliate-ready]
+    paths-ignore:
+      - debug/d1-provisioning-result.json
+
+permissions:
+  contents: write
+
+concurrency:
+  group: choosepc-d1-provisioning-result
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Capture provisioning result from Cloudflare branch preview
+        shell: bash
+        run: |
+          set -u
+          ORIGIN='https://ops-provision-d1-affiliate-ready-choosepc.syouziroupc.workers.dev'
+          found=0
+          code=000
+          for attempt in $(seq 1 48); do
+            for path in '/provisioning-result.json' '/pc-check/provisioning-result.json'; do
+              code=$(curl -L -sS -o /tmp/provisioning-result.json -w '%{http_code}' --max-time 10 "${ORIGIN}${path}?capture=${GITHUB_SHA}-${attempt}" || echo 000)
+              if [ "$code" = 200 ] && grep -q 'databaseName' /tmp/provisioning-result.json; then
+                found=1
+                break 2
+              fi
+            done
+            sleep 5
+          done
+          mkdir -p debug
+          if [ "$found" = 1 ]; then
+            cp /tmp/provisioning-result.json debug/d1-provisioning-result.json
+          else
+            printf '{"ok":false,"captureError":"preview diagnostic not found","http":"%s"}\n' "$code" > debug/d1-provisioning-result.json
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add debug/d1-provisioning-result.json
+          git commit -m 'ops: record D1 provisioning result' || true
+          git push origin HEAD:ops/provision-d1-affiliate-ready
+          test "$found" = 1
