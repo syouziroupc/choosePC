@@ -17,11 +17,13 @@ jobs:
   capture:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      TARGET_PROVISION_COMMIT: a1a6ca2831c50acaed72f6b6046cb8c5bb1da932
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Capture exact provisioning result from Cloudflare branch preview
+      - name: Capture completed provisioning result from Cloudflare branch preview
         shell: bash
         run: |
           set -u
@@ -31,7 +33,7 @@ jobs:
           for attempt in $(seq 1 48); do
             for path in '/provisioning-result.json' '/pc-check/provisioning-result.json'; do
               code=$(curl -L -sS -o /tmp/provisioning-result.json -w '%{http_code}' --max-time 10 "${ORIGIN}${path}?capture=${GITHUB_SHA}-${attempt}" || echo 000)
-              if [ "$code" = 200 ] && grep -q 'databaseName' /tmp/provisioning-result.json && grep -q "\"commit\": \"${GITHUB_SHA}\"" /tmp/provisioning-result.json; then
+              if [ "$code" = 200 ] && grep -q 'databaseName' /tmp/provisioning-result.json && grep -q "\"commit\": \"${TARGET_PROVISION_COMMIT}\"" /tmp/provisioning-result.json; then
                 found=1
                 break 2
               fi
@@ -42,11 +44,11 @@ jobs:
           if [ "$found" = 1 ]; then
             cp /tmp/provisioning-result.json debug/d1-provisioning-result.json
           else
-            printf '{"ok":false,"captureError":"exact preview diagnostic not found","expectedCommit":"%s","http":"%s"}\n' "$GITHUB_SHA" "$code" > debug/d1-provisioning-result.json
+            printf '{"ok":false,"captureError":"target provisioning diagnostic not found","expectedCommit":"%s","http":"%s"}\n' "$TARGET_PROVISION_COMMIT" "$code" > debug/d1-provisioning-result.json
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add debug/d1-provisioning-result.json
-          git commit -m 'ops: record exact D1 provisioning result' || true
+          git commit -m 'ops: record completed D1 provisioning result' || true
           git push origin HEAD:ops/provision-d1-affiliate-ready
           test "$found" = 1
