@@ -197,7 +197,9 @@ function validCommercialLink(value: unknown): value is CommercialLinkInput {
 function validCommercialPayload(body: { program?: unknown; links?: unknown }): body is { program: CommercialProgramInput; links?: CommercialLinkInput[] } {
   if (!validProgram(body.program)) return false;
   if (body.links == null) return true;
-  return Array.isArray(body.links) && body.links.length <= MAX_BATCH && body.links.every(validCommercialLink);
+  if (!Array.isArray(body.links) || body.links.length > MAX_BATCH || !body.links.every(validCommercialLink)) return false;
+  const offerIds = body.links.map((link) => link.offerId);
+  return new Set(offerIds).size === offerIds.length;
 }
 
 async function handleOfferIngest(request: Request, env: Env): Promise<Response> {
@@ -258,6 +260,7 @@ export default {
         "INVALID_COMMERCIAL_URL",
         "INVALID_CLICK_REF_PARAM",
         "COMMISSION_METADATA_TOO_LARGE",
+        "COMMERCIAL_DUPLICATE_OFFER_LINK",
         "INVALID_OFFER_URL",
         "INVALID_OFFER_OBSERVED_AT",
         "INVALID_OFFER_EXPIRY",
