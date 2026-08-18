@@ -1,0 +1,2 @@
+target_api_version=2026-08-18-static-frontend-v4
+reason=force Cloudflare production build from suspected production branch
