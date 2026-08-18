@@ -1,0 +1,61 @@
+name: probe-cloudflare-recovery-preview
+
+on:
+  push:
+    branches:
+      - release/force-production-v5-once
+    paths-ignore:
+      - debug/cloudflare-recovery-preview.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: choosepc-cloudflare-recovery-preview
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Read non-secret diagnostic from Cloudflare branch preview
+        shell: bash
+        run: |
+          set -u
+          ORIGIN='https://release-force-production-v5-once-choosepc.syouziroupc.workers.dev'
+          found=0
+          body=''
+          used_path=''
+          code='000'
+          for attempt in $(seq 1 36); do
+            for path in '/cloudflare-recovery.json' '/pc-check/cloudflare-recovery.json'; do
+              code=$(curl -L -sS -o /tmp/recovery -w '%{http_code}' --max-time 10 "${ORIGIN}${path}?probe=${GITHUB_SHA}-${attempt}" || echo 000)
+              if [ "$code" = '200' ] && grep -q 'apiTokenPresent' /tmp/recovery; then
+                found=1
+                used_path="$path"
+                body="$(cat /tmp/recovery)"
+                break 2
+              fi
+            done
+            sleep 5
+          done
+          mkdir -p debug
+          {
+            echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "probe_sha=${GITHUB_SHA}"
+            echo "found=${found}"
+            echo "http=${code}"
+            echo "path=${used_path}"
+            echo '--- diagnostic ---'
+            printf '%s\n' "$body"
+          } > debug/cloudflare-recovery-preview.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add debug/cloudflare-recovery-preview.txt
+          git commit -m 'ci: record Cloudflare recovery preview diagnostic' || true
+          git push origin HEAD:release/force-production-v5-once
+          test "$found" = 1
