@@ -1,10 +1,14 @@
 {
   "version": "szpc-sales-public-control-v1",
-  "command_id": "bootstrap-20260819",
-  "kind": "REFRESH",
-  "company_id": 0,
-  "review": null,
-  "gmail_message_id": "",
-  "sent_at": "",
-  "created_at": "2026-08-19T08:00:00Z"
+  "batch_id": "smoke-v43-state-20260819-01",
+  "commands": [
+    {
+      "version": "szpc-sales-public-control-v1",
+      "command_id": "smoke-v43-state-20260819-01",
+      "kind": "STATE_REQUEST",
+      "offset": 0,
+      "limit": 5,
+      "created_at": "2026-08-19T07:40:00Z"
+    }
+  ]
 }
