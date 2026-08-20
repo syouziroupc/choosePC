@@ -19,6 +19,8 @@ type ProgramRow = {
   merchant: string;
   programType: string;
   status: string;
+  affiliateNetwork: string | null;
+  externalProgramId: string | null;
   commissionJson: string | null;
   disclosureText: string | null;
   sourceUrl: string | null;
@@ -152,6 +154,8 @@ export async function loadAdminOverview(env: PersistenceEnv): Promise<{
       cp.merchant,
       cp.program_type AS programType,
       cp.status,
+      cp.affiliate_network AS affiliateNetwork,
+      cp.external_program_id AS externalProgramId,
       cp.commission_json AS commissionJson,
       cp.disclosure_text AS disclosureText,
       cp.source_url AS sourceUrl,
