@@ -1,9 +1,5 @@
 {
   "version": "gpt-runtime-control-v50",
-  "batch_id": "20260820-1734-broad-review-100-next",
-  "commands": [
-    {
-      "kind": "RUN_BROAD_REVIEW_100"
-    }
-  ]
+  "batch_id": "20260820-manual-review-only-stop-broad",
+  "commands": []
 }
