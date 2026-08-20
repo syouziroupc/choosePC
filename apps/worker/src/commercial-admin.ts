@@ -2,6 +2,7 @@ import type { MerchantType } from "../../../packages/core/src/index";
 import type { PersistenceEnv } from "./persistence";
 
 export type CommercialProgramStatus = "active" | "paused" | "unknown";
+export const PRIMARY_AFFILIATE_NETWORK_ID = "a8" as const;
 
 export interface CommercialProgramInput {
   key: string;
@@ -13,6 +14,7 @@ export interface CommercialProgramInput {
   sourceUrl?: string | null;
   lastVerifiedAt?: string | null;
   clickRefParam?: string | null;
+  externalProgramId?: string | null;
 }
 
 export interface CommercialLinkInput {
@@ -22,6 +24,8 @@ export interface CommercialLinkInput {
 
 export interface StoredCommercialConfiguration {
   programId: string;
+  affiliateNetwork: "a8" | null;
+  externalProgramId: string | null;
   linkIds: string[];
   linkedOfferIds: string[];
 }
@@ -45,10 +49,21 @@ function safeHttpsUrl(raw: string): string {
   return url.toString();
 }
 
-function safeClickRefParam(value?: string | null): string | null {
-  if (value == null) return null;
+function safeClickRefParam(value: string | null | undefined, affiliateNetwork: "a8" | null): string | null {
+  if (value == null || value.trim() === "") return null;
   const normalized = value.trim();
+  if (affiliateNetwork === PRIMARY_AFFILIATE_NETWORK_ID) {
+    if (!/^id[1-5]$/.test(normalized)) throw new Error("INVALID_A8_CLICK_REF_PARAM");
+    return normalized;
+  }
   if (!/^[A-Za-z0-9_.-]{1,64}$/.test(normalized)) throw new Error("INVALID_CLICK_REF_PARAM");
+  return normalized;
+}
+
+function safeExternalProgramId(value?: string | null): string | null {
+  if (value == null || value.trim() === "") return null;
+  const normalized = value.trim();
+  if (!/^[A-Za-z0-9._:-]{1,120}$/.test(normalized)) throw new Error("INVALID_EXTERNAL_PROGRAM_ID");
   return normalized;
 }
 
@@ -109,9 +124,8 @@ async function executeStatements(db: D1Database, statements: D1PreparedStatement
  * Writes only post-ranking commercial configuration. This module is not imported by the neutral
  * offer loader or evaluation packages and therefore cannot supply commission data to ranking.
  *
- * The program row and its complete attribution-link set are committed in one D1 batch. Updating a
- * program therefore replaces the prior link set instead of leaving stale affiliate destinations
- * behind when a link is removed in the operations console.
+ * All affiliate programs are deliberately bound to A8.net. This keeps one affiliate control plane
+ * while still allowing multiple A8 advertisers and product-level destinations.
  */
 export async function upsertCommercialConfiguration(args: {
   env: PersistenceEnv;
@@ -126,15 +140,18 @@ export async function upsertCommercialConfiguration(args: {
   const programId = `program-${(await sha256Hex(`${normalizedMerchant}\n${args.program.programType}\n${normalizedKey}`)).slice(0, 40)}`;
   const sourceUrl = args.program.sourceUrl ? safeHttpsUrl(args.program.sourceUrl) : null;
   const commission = commissionJson(args.program.commissionMetadata);
-  const clickRefParam = safeClickRefParam(args.program.clickRefParam);
+  const affiliateNetwork = args.program.programType === "affiliate" ? PRIMARY_AFFILIATE_NETWORK_ID : null;
+  const clickRefParam = safeClickRefParam(args.program.clickRefParam, affiliateNetwork);
+  const externalProgramId = safeExternalProgramId(args.program.externalProgramId);
   const links = await prepareLinks(db, programId, args.program.merchant, args.links);
 
   const statements: D1PreparedStatement[] = [
     db.prepare(`
       INSERT INTO commercial_programs (
         id, merchant, program_type, status, commission_json, disclosure_text,
-        source_url, last_verified_at, click_ref_param, program_key, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        source_url, last_verified_at, click_ref_param, program_key,
+        affiliate_network, external_program_id, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(id) DO UPDATE SET
         merchant = excluded.merchant,
         program_type = excluded.program_type,
@@ -145,6 +162,8 @@ export async function upsertCommercialConfiguration(args: {
         last_verified_at = excluded.last_verified_at,
         click_ref_param = excluded.click_ref_param,
         program_key = excluded.program_key,
+        affiliate_network = excluded.affiliate_network,
+        external_program_id = excluded.external_program_id,
         updated_at = CURRENT_TIMESTAMP
     `).bind(
       programId,
@@ -157,6 +176,8 @@ export async function upsertCommercialConfiguration(args: {
       args.program.lastVerifiedAt ?? null,
       clickRefParam,
       args.program.key.trim(),
+      affiliateNetwork,
+      externalProgramId,
     ),
     db.prepare("DELETE FROM attribution_links WHERE program_id = ?").bind(programId),
   ];
@@ -176,6 +197,8 @@ export async function upsertCommercialConfiguration(args: {
 
   return {
     programId,
+    affiliateNetwork,
+    externalProgramId,
     linkIds: links.map((link) => link.linkId),
     linkedOfferIds: links.map((link) => link.offerId),
   };

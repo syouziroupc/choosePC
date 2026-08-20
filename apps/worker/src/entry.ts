@@ -184,7 +184,19 @@ function validProgram(value: unknown): value is CommercialProgramInput {
     const verifiedAt = new Date(program.lastVerifiedAt).getTime();
     if (!Number.isFinite(verifiedAt) || verifiedAt > Date.now() + 86_400_000) return false;
   }
-  if (program.clickRefParam != null && (typeof program.clickRefParam !== "string" || !/^[A-Za-z0-9_.-]{1,64}$/.test(program.clickRefParam.trim()))) return false;
+  if (program.clickRefParam != null) {
+    if (typeof program.clickRefParam !== "string") return false;
+    const param = program.clickRefParam.trim();
+    if (program.programType === "affiliate") {
+      if (!/^id[1-5]$/.test(param)) return false;
+    } else if (!/^[A-Za-z0-9_.-]{1,64}$/.test(param)) {
+      return false;
+    }
+  }
+  if (program.externalProgramId != null) {
+    if (program.programType !== "affiliate") return false;
+    if (typeof program.externalProgramId !== "string" || !/^[A-Za-z0-9._:-]{1,120}$/.test(program.externalProgramId.trim())) return false;
+  }
   return true;
 }
 
@@ -259,6 +271,8 @@ export default {
       if ([
         "INVALID_COMMERCIAL_URL",
         "INVALID_CLICK_REF_PARAM",
+        "INVALID_A8_CLICK_REF_PARAM",
+        "INVALID_EXTERNAL_PROGRAM_ID",
         "COMMISSION_METADATA_TOO_LARGE",
         "COMMERCIAL_DUPLICATE_OFFER_LINK",
         "INVALID_OFFER_URL",

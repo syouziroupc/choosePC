@@ -53,6 +53,8 @@ const program = {
   disclosureText: "広告リンクを含みます。",
   sourceUrl: "https://partner.example/program#fragment",
   lastVerifiedAt: new Date().toISOString(),
+  clickRefParam: "id1",
+  externalProgramId: "a8-example-123",
 };
 
 const link = { offerId: "offer-1", destinationUrl: "https://affiliate.example/item#fragment" };
@@ -65,21 +67,36 @@ describe("commercial configuration administration", () => {
     expect(db.statements.filter((item) => item.kind === "write")).toEqual([]);
   });
 
-  it("stores commission only in post-ranking commercial_programs and normalizes HTTPS URLs", async () => {
+  it("stores A8 provenance only in post-ranking commercial_programs and normalizes HTTPS URLs", async () => {
     const db = fakeDb();
     const stored = await upsertCommercialConfiguration({ env: { DB: db.DB as never }, program, links: [link] });
     expect(stored.programId).toMatch(/^program-[a-f0-9]{40}$/);
     expect(stored.linkIds[0]).toMatch(/^attr-[a-f0-9]{40}$/);
+    expect(stored.affiliateNetwork).toBe("a8");
+    expect(stored.externalProgramId).toBe("a8-example-123");
 
     const programWrite = db.statements.find((item) => /INSERT INTO commercial_programs/i.test(item.sql));
     expect(programWrite).toBeTruthy();
     expect(String(programWrite!.args[4])).toContain("\"rate\":0.03");
     expect(programWrite!.args[6]).toBe("https://partner.example/program");
+    expect(programWrite!.args[8]).toBe("id1");
+    expect(programWrite!.args[10]).toBe("a8");
+    expect(programWrite!.args[11]).toBe("a8-example-123");
 
     const linkWrite = db.statements.find((item) => /INSERT INTO attribution_links/i.test(item.sql));
     expect(linkWrite).toBeTruthy();
     expect(linkWrite!.args[3]).toBe("https://affiliate.example/item");
     expect(linkWrite!.sql).not.toMatch(/commission/i);
+  });
+
+  it("accepts only A8 id1-id5 click-reference parameters for affiliate programs", async () => {
+    const db = fakeDb();
+    await expect(upsertCommercialConfiguration({
+      env: { DB: db.DB as never },
+      program: { ...program, clickRefParam: "subid" },
+      links: [],
+    })).rejects.toThrow("INVALID_A8_CLICK_REF_PARAM");
+    expect(db.statements.filter((item) => item.kind === "write")).toEqual([]);
   });
 
   it("replaces the complete link set so removed affiliate mappings cannot remain stale", async () => {

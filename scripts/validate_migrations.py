@@ -45,10 +45,17 @@ try:
             "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )
     ]
-    if "evaluation_runs" not in tables or "market_observations" not in tables or "knowledge_evidence" not in tables:
-        raise SystemExit("Required core tables are missing after migrations")
+    required = {"evaluation_runs", "market_observations", "knowledge_evidence", "affiliate_networks"}
+    if not required.issubset(set(tables)):
+        raise SystemExit("Required core/A8 tables are missing after migrations")
 
-    # Exercise the commercial-integrity and offer-freshness constraints against real SQLite rather than only parsing DDL.
+    selected_network = connection.execute(
+        "SELECT display_name, selection_status FROM affiliate_networks WHERE id = 'a8'"
+    ).fetchone()
+    if selected_network != ("A8.net", "selected"):
+        raise SystemExit(f"A8 single-network selection missing: {selected_network}")
+
+    # Exercise commercial integrity, A8 single-network constraints and offer freshness against real SQLite.
     connection.execute(
         "INSERT INTO merchant_offers (id, merchant, title, price_jpy, product_url, normalized_pc_json, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         ("offer-a", "Merchant A", "A", 10000, "https://example.com/a", "{}", "2026-08-13T00:00:00Z"),
@@ -81,13 +88,26 @@ try:
     )
 
     connection.execute(
-        "INSERT INTO commercial_programs (id, merchant, program_type, status) VALUES (?, ?, ?, ?)",
-        ("program-a", "Merchant A", "affiliate", "active"),
+        "INSERT INTO commercial_programs (id, merchant, program_type, status, affiliate_network, click_ref_param) VALUES (?, ?, ?, ?, ?, ?)",
+        ("program-a", "Merchant A", "affiliate", "active", "a8", "id1"),
     )
     connection.execute(
-        "INSERT INTO commercial_programs (id, merchant, program_type, status) VALUES (?, ?, ?, ?)",
-        ("program-b", "Merchant B", "affiliate", "active"),
+        "INSERT INTO commercial_programs (id, merchant, program_type, status, affiliate_network) VALUES (?, ?, ?, ?, ?)",
+        ("program-b", "Merchant B", "affiliate", "active", "a8"),
     )
+    expect_integrity_error(
+        "INSERT INTO commercial_programs (id, merchant, program_type, status, affiliate_network) VALUES (?, ?, ?, ?, ?)",
+        ("program-other-network", "Merchant A", "affiliate", "active", "other"),
+    )
+    expect_integrity_error(
+        "INSERT INTO commercial_programs (id, merchant, program_type, status, affiliate_network, click_ref_param) VALUES (?, ?, ?, ?, ?, ?)",
+        ("program-bad-param", "Merchant A", "affiliate", "active", "a8", "subid"),
+    )
+    expect_integrity_error(
+        "INSERT INTO commercial_programs (id, merchant, program_type, status, affiliate_network) VALUES (?, ?, ?, ?, ?)",
+        ("program-normal-a8", "Merchant A", "normal", "active", "a8"),
+    )
+
     connection.execute(
         "INSERT INTO attribution_links (id, offer_id, program_id, destination_url) VALUES (?, ?, ?, ?)",
         ("attr-valid", "offer-a", "program-a", "https://example.com/out"),
@@ -115,7 +135,7 @@ try:
 
     print(
         f"Migration validation passed: {len(files)} migration(s), {len(tables)} table(s), "
-        f"{len(indexes)} explicit index(es); commercial integrity and offer freshness triggers verified."
+        f"{len(indexes)} explicit index(es); A8 single-network, commercial integrity and offer freshness guards verified."
     )
 finally:
     connection.close()

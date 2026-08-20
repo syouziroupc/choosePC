@@ -1,6 +1,7 @@
 import app from "./browser-enhanced-entry";
 import production from "./production-entry";
 import { loadAdminOverview, recordApiRequest } from "./admin-store";
+import { loadAffiliateStatus } from "./affiliate-status";
 import { opsConsoleCss, opsConsoleHtml, opsConsoleJs } from "./ops-console";
 import type { PersistenceEnv } from "./persistence";
 
@@ -18,7 +19,7 @@ type ScheduledHandler = (controller: ScheduledController, env: Env, ctx: Executi
 
 const appFetch = app.fetch as unknown as AppFetch;
 const scheduled = production.scheduled as unknown as ScheduledHandler;
-const API_VERSION = "2026-08-18-static-frontend-v7";
+const API_VERSION = "2026-08-20-a8-single-network-v8";
 const CLIENT_HEADER = "x-choosepc-client";
 const SESSION_COOKIE = "pc_assist_sid";
 const PUBLIC_API_PREFIX = "/api/v1/";
@@ -154,6 +155,7 @@ function metadata(request: Request, env: Env): Response {
     frontendOrigins: [...ALLOWED_PRODUCTION_ORIGINS],
     clientHeader: "X-ChoosePC-Client",
     persistenceConfigured: Boolean(env.DB),
+    selectedAffiliateNetwork: "a8",
     publicUiHostedHere: false,
     operationsConsole: `${url.origin}/`,
   });
@@ -170,6 +172,7 @@ async function enrichHealth(response: Response, env: Env): Promise<Response> {
       mode: "api",
       apiVersion: API_VERSION,
       persistenceConfigured: Boolean(env.DB),
+      selectedAffiliateNetwork: "a8",
       publicUiHostedHere: false,
       operationsConsole: "/",
     }), { status: response.status, statusText: response.statusText, headers });
@@ -225,6 +228,27 @@ export default {
     if (request.method === "OPTIONS") {
       if (!origin) return new Response(null, { status: 400 });
       return preflight(request, origin);
+    }
+
+    if (url.pathname === "/api/v1/affiliate/status" && request.method === "GET") {
+      let response: Response;
+      try {
+        response = json(await loadAffiliateStatus(env));
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: "affiliate_status_error",
+          error: error instanceof Error ? error.message : String(error),
+        }));
+        response = json({ error: "AFFILIATE_STATUS_UNAVAILABLE" }, 503);
+      }
+      const result = withApiHeaders(response, origin, Boolean(originHeader));
+      ctx.waitUntil(recordApiRequest({
+        env,
+        pathname: url.pathname,
+        method: request.method,
+        status: result.status,
+      }));
+      return result;
     }
 
     const forwarded = requestWithClientSession(request);
