@@ -1,14 +1,14 @@
 {
   "version": "szpc-sales-public-control-v1",
-  "batch_id": "smoke-v43-state-20260819-01",
+  "batch_id": "state-unreviewed100-20260820-1642",
   "commands": [
     {
       "version": "szpc-sales-public-control-v1",
-      "command_id": "smoke-v43-state-20260819-01",
+      "command_id": "state-unreviewed100-20260820-1642",
       "kind": "STATE_REQUEST",
       "offset": 0,
-      "limit": 5,
-      "created_at": "2026-08-19T07:40:00Z"
+      "limit": 100,
+      "created_at": "2026-08-20T07:42:00Z"
     }
   ]
 }
