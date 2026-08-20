@@ -184,7 +184,7 @@ describe("API backend with workers.dev operations console", () => {
     const { env } = makeEnv();
     const response = await worker.fetch(new Request("https://choosepc.example/api/v1/catalog", {
       headers: { origin: "https://example.invalid" },
-    });
+    }));
     const body = await response.json() as { error?: string };
     expect(response.status).toBe(403);
     expect(body.error).toBe("ORIGIN_NOT_ALLOWED");
