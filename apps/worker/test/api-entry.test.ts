@@ -40,6 +40,35 @@ function makeAdminEnv() {
   };
 }
 
+function makeAffiliateEnv() {
+  const { env, limit } = makeEnv();
+  const metricRun = vi.fn(async () => ({ success: true }));
+  const DB = {
+    prepare(sql: string) {
+      if (/totalPrograms/i.test(sql) && /affiliate_network = 'a8'/i.test(sql)) {
+        return {
+          async first() {
+            return { totalPrograms: 1, activePrograms: 0, pausedPrograms: 1, mappedOffers: 2, activeMappedOffers: 0 };
+          },
+        };
+      }
+      return {
+        bind() {
+          return { run: metricRun };
+        },
+      };
+    },
+  };
+  return {
+    env: {
+      ...(env as unknown as Record<string, unknown>),
+      DB,
+    } as unknown as EnvShape,
+    limit,
+    metricRun,
+  };
+}
+
 function context() {
   return { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
 }
@@ -66,13 +95,49 @@ describe("API backend with workers.dev operations console", () => {
   it("keeps API metadata at /api/v1 instead of the console", async () => {
     const { env } = makeEnv();
     const response = await worker.fetch(new Request("https://choosepc.example/api/v1"), env, context());
-    const body = await response.json() as { service?: string; mode?: string; publicUiHostedHere?: boolean; persistenceConfigured?: boolean; operationsConsole?: string };
+    const body = await response.json() as {
+      service?: string;
+      mode?: string;
+      publicUiHostedHere?: boolean;
+      persistenceConfigured?: boolean;
+      operationsConsole?: string;
+      selectedAffiliateNetwork?: string;
+      apiVersion?: string;
+    };
     expect(response.status).toBe(200);
     expect(body.service).toBe("choosePC");
     expect(body.mode).toBe("api");
     expect(body.publicUiHostedHere).toBe(false);
     expect(body.persistenceConfigured).toBe(false);
     expect(body.operationsConsole).toBe("https://choosepc.example/");
+    expect(body.selectedAffiliateNetwork).toBe("a8");
+    expect(body.apiVersion).toBe("2026-08-20-a8-single-network-v8");
+  });
+
+  it("exposes public A8 readiness status to www.szpc.jp without exposing credentials", async () => {
+    const { env } = makeAffiliateEnv();
+    const response = await worker.fetch(new Request("https://choosepc.example/api/v1/affiliate/status", {
+      headers: { origin: "https://www.szpc.jp" },
+    }), env, context());
+    const body = await response.json() as {
+      network?: { id?: string; name?: string; selected?: boolean };
+      persistenceConfigured?: boolean;
+      pausedPrograms?: number;
+      readyForTraffic?: boolean;
+      state?: string;
+      tracking?: { clickReferenceParameters?: string[]; amazonRakutenParameterTracking?: boolean };
+    };
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://www.szpc.jp");
+    expect(response.headers.get("x-choosepc-api-version")).toBe("2026-08-20-a8-single-network-v8");
+    expect(body.network).toEqual(expect.objectContaining({ id: "a8", name: "A8.net", selected: true }));
+    expect(body.persistenceConfigured).toBe(true);
+    expect(body.pausedPrograms).toBe(1);
+    expect(body.readyForTraffic).toBe(false);
+    expect(body.state).toBe("awaiting-a8-program-link");
+    expect(body.tracking?.clickReferenceParameters).toEqual(["id1", "id2", "id3", "id4", "id5"]);
+    expect(body.tracking?.amazonRakutenParameterTracking).toBe(false);
+    expect(JSON.stringify(body)).not.toMatch(/token|secret|authorization/i);
   });
 
   it("does not expose admin overview without the commercial admin token", async () => {
@@ -104,7 +169,7 @@ describe("API backend with workers.dev operations console", () => {
       headers: { origin: "https://www.szpc.jp" },
     });
     const response = await worker.fetch(request, env, context());
-    const body = await response.json() as { mode?: string; persistenceConfigured?: boolean; publicUiHostedHere?: boolean };
+    const body = await response.json() as { mode?: string; persistenceConfigured?: boolean; publicUiHostedHere?: boolean; selectedAffiliateNetwork?: string };
     expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBe("https://www.szpc.jp");
     expect(response.headers.get("vary")).toContain("Origin");
@@ -112,13 +177,14 @@ describe("API backend with workers.dev operations console", () => {
     expect(body.mode).toBe("api");
     expect(body.persistenceConfigured).toBe(false);
     expect(body.publicUiHostedHere).toBe(false);
+    expect(body.selectedAffiliateNetwork).toBe("a8");
   });
 
   it("rejects browser API calls from unrelated origins", async () => {
     const { env } = makeEnv();
     const response = await worker.fetch(new Request("https://choosepc.example/api/v1/catalog", {
       headers: { origin: "https://example.invalid" },
-    }), env, context());
+    });
     const body = await response.json() as { error?: string };
     expect(response.status).toBe(403);
     expect(body.error).toBe("ORIGIN_NOT_ALLOWED");
