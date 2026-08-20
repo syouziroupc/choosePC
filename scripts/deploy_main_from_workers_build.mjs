@@ -96,7 +96,7 @@ run(npx, ["wrangler", "deploy", "--config", "wrangler.jsonc", "--keep-vars"]);
 for (let attempt = 1; attempt <= 24; attempt += 1) {
   const suffix = `${process.env.WORKERS_CI_COMMIT_SHA ?? "main"}-${attempt}`;
   try {
-    const [root, metadata, health, catalog] = await Promise.all([
+    const [root, metadata, health, catalog, affiliate] = await Promise.all([
       fetch(`${PRODUCTION_ORIGIN}/?deploy=${suffix}`, { headers: { "cache-control": "no-cache" } }),
       fetch(`${PRODUCTION_ORIGIN}/api/v1?deploy=${suffix}`, {
         headers: { "cache-control": "no-cache", origin: FRONTEND_ORIGIN },
@@ -107,34 +107,49 @@ for (let attempt = 1; attempt <= 24; attempt += 1) {
       fetch(`${PRODUCTION_ORIGIN}/api/v1/catalog?deploy=${suffix}`, {
         headers: { "cache-control": "no-cache", origin: FRONTEND_ORIGIN },
       }),
+      fetch(`${PRODUCTION_ORIGIN}/api/v1/affiliate/status?deploy=${suffix}`, {
+        headers: { "cache-control": "no-cache", origin: FRONTEND_ORIGIN },
+      }),
     ]);
 
-    const [rootText, metadataJson, healthJson, catalogJson] = await Promise.all([
+    const [rootText, metadataJson, healthJson, catalogJson, affiliateJson] = await Promise.all([
       root.text(),
       metadata.json().catch(() => null),
       health.json().catch(() => null),
       catalog.json().catch(() => null),
+      affiliate.json().catch(() => null),
     ]);
     const cpuCount = Array.isArray(catalogJson?.cpus) ? catalogJson.cpus.length : -1;
     const gpuCount = Array.isArray(catalogJson?.gpus) ? catalogJson.gpus.length : -1;
     const cors = health.headers.get("access-control-allow-origin");
+    const affiliateCors = affiliate.headers.get("access-control-allow-origin");
+    const affiliateStateValid = affiliateJson?.state === "awaiting-a8-program-link" || affiliateJson?.state === "ready";
     const matched = root.ok
       && metadata.ok
       && health.ok
       && catalog.ok
+      && affiliate.ok
       && rootText.includes("choosePC Operations")
       && metadataJson?.apiVersion === apiVersion
       && healthJson?.apiVersion === apiVersion
+      && metadataJson?.selectedAffiliateNetwork === "a8"
+      && healthJson?.selectedAffiliateNetwork === "a8"
+      && affiliateJson?.network?.id === "a8"
+      && affiliateJson?.network?.name === "A8.net"
+      && affiliateJson?.network?.selected === true
+      && affiliateJson?.persistenceConfigured === true
+      && affiliateStateValid
       && metadataJson?.publicUiHostedHere === false
       && metadataJson?.persistenceConfigured === true
       && healthJson?.persistenceConfigured === true
       && cpuCount === expectedCpuCount
       && gpuCount === expectedGpuCount
-      && cors === FRONTEND_ORIGIN;
+      && cors === FRONTEND_ORIGIN
+      && affiliateCors === FRONTEND_ORIGIN;
 
-    console.log(`[active-deploy] verify ${attempt}: root=${root.status} meta=${metadata.status} health=${health.status} catalog=${catalog.status} db=${healthJson?.persistenceConfigured} cpu=${cpuCount} gpu=${gpuCount} cors=${cors ?? "-"} matched=${matched}`);
+    console.log(`[active-deploy] verify ${attempt}: root=${root.status} meta=${metadata.status} health=${health.status} catalog=${catalog.status} affiliate=${affiliate.status}/${affiliateJson?.state ?? "-"} db=${healthJson?.persistenceConfigured} cpu=${cpuCount} gpu=${gpuCount} cors=${cors ?? "-"}/${affiliateCors ?? "-"} matched=${matched}`);
     if (matched) {
-      console.log(`[active-deploy] production verified: ${apiVersion}, D1=${dbBinding.database_id}, CPUs=${cpuCount}, GPUs=${gpuCount}`);
+      console.log(`[active-deploy] production verified: ${apiVersion}, A8=${affiliateJson.state}, D1=${dbBinding.database_id}, CPUs=${cpuCount}, GPUs=${gpuCount}`);
       process.exit(0);
     }
   } catch (error) {
@@ -143,4 +158,4 @@ for (let attempt = 1; attempt <= 24; attempt += 1) {
   await new Promise((resolve) => setTimeout(resolve, 5000));
 }
 
-throw new Error(`Active production did not converge to ${apiVersion} with D1 persistence`);
+throw new Error(`Active production did not converge to ${apiVersion} with D1 persistence and A8 readiness API`);
