@@ -33,28 +33,37 @@ jobs:
           meta_code=000
           health_code=000
           catalog_code=000
+          affiliate_code=000
           for attempt in $(seq 1 48); do
             suffix="${GITHUB_SHA}-${attempt}"
             root_code=$(curl -L -sS -o /tmp/root -w '%{http_code}' --max-time 10 -H 'Cache-Control: no-cache' "${ORIGIN}/?verify=${suffix}" || echo 000)
             meta_code=$(curl -L -sS -o /tmp/meta -w '%{http_code}' --max-time 10 -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND}" "${ORIGIN}/api/v1?verify=${suffix}" || echo 000)
             health_code=$(curl -L -sS -D /tmp/health.headers -o /tmp/health -w '%{http_code}' --max-time 10 -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND}" "${ORIGIN}/api/v1/health?verify=${suffix}" || echo 000)
             catalog_code=$(curl -L -sS -o /tmp/catalog -w '%{http_code}' --max-time 10 -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND}" "${ORIGIN}/api/v1/catalog?verify=${suffix}" || echo 000)
-            if [ "$root_code" = 200 ] && [ "$meta_code" = 200 ] && [ "$health_code" = 200 ] && [ "$catalog_code" = 200 ] && grep -q 'choosePC Operations' /tmp/root; then
+            affiliate_code=$(curl -L -sS -D /tmp/affiliate.headers -o /tmp/affiliate -w '%{http_code}' --max-time 10 -H 'Cache-Control: no-cache' -H "Origin: ${FRONTEND}" "${ORIGIN}/api/v1/affiliate/status?verify=${suffix}" || echo 000)
+            if [ "$root_code" = 200 ] && [ "$meta_code" = 200 ] && [ "$health_code" = 200 ] && [ "$catalog_code" = 200 ] && [ "$affiliate_code" = 200 ] && grep -q 'choosePC Operations' /tmp/root; then
               if EXPECTED_VERSION="$EXPECTED_VERSION" EXPECTED_CPU="$EXPECTED_CPU" EXPECTED_GPU="$EXPECTED_GPU" node <<'NODE'
           const fs = require('fs');
           const meta = JSON.parse(fs.readFileSync('/tmp/meta','utf8'));
           const health = JSON.parse(fs.readFileSync('/tmp/health','utf8'));
           const catalog = JSON.parse(fs.readFileSync('/tmp/catalog','utf8'));
+          const affiliate = JSON.parse(fs.readFileSync('/tmp/affiliate','utf8'));
           const cpu = Array.isArray(catalog.cpus) ? catalog.cpus.length : -1;
           const gpu = Array.isArray(catalog.gpus) ? catalog.gpus.length : -1;
           if (meta.apiVersion !== process.env.EXPECTED_VERSION) process.exit(1);
           if (health.apiVersion !== process.env.EXPECTED_VERSION) process.exit(1);
           if (meta.publicUiHostedHere !== false) process.exit(1);
+          if (meta.persistenceConfigured !== true || health.persistenceConfigured !== true) process.exit(1);
+          if (meta.selectedAffiliateNetwork !== 'a8' || health.selectedAffiliateNetwork !== 'a8') process.exit(1);
+          if (affiliate?.network?.id !== 'a8' || affiliate?.network?.name !== 'A8.net' || affiliate?.network?.selected !== true) process.exit(1);
+          if (affiliate.persistenceConfigured !== true) process.exit(1);
+          if (!['awaiting-a8-program-link','ready'].includes(affiliate.state)) process.exit(1);
+          if (typeof affiliate.readyForTraffic !== 'boolean') process.exit(1);
           if (cpu !== Number(process.env.EXPECTED_CPU)) process.exit(1);
           if (gpu !== Number(process.env.EXPECTED_GPU)) process.exit(1);
           NODE
               then
-                if tr -d '\r' < /tmp/health.headers | grep -qi "^access-control-allow-origin: ${FRONTEND}$"; then
+                if tr -d '\r' < /tmp/health.headers | grep -qi "^access-control-allow-origin: ${FRONTEND}$" && tr -d '\r' < /tmp/affiliate.headers | grep -qi "^access-control-allow-origin: ${FRONTEND}$"; then
                   matched=1
                   break
                 fi
@@ -75,9 +84,11 @@ jobs:
             echo "meta_http=${meta_code}"
             echo "health_http=${health_code}"
             echo "catalog_http=${catalog_code}"
+            echo "affiliate_http=${affiliate_code}"
             echo '--- root ---'; head -c 2500 /tmp/root 2>/dev/null || true; echo
             echo '--- meta ---'; head -c 2500 /tmp/meta 2>/dev/null || true; echo
             echo '--- health ---'; head -c 2500 /tmp/health 2>/dev/null || true; echo
+            echo '--- affiliate ---'; head -c 2500 /tmp/affiliate 2>/dev/null || true; echo
             echo '--- catalog-summary ---'
             node -e "try{const c=JSON.parse(require('fs').readFileSync('/tmp/catalog','utf8'));console.log(JSON.stringify({cpus:Array.isArray(c.cpus)?c.cpus.length:null,gpus:Array.isArray(c.gpus)?c.gpus.length:null}))}catch(e){console.log('{}')}"
           } > debug/active-production-latest.txt
