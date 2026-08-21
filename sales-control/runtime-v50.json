@@ -1,5 +1,9 @@
 {
   "version": "gpt-runtime-control-v50",
-  "batch_id": "20260820-manual-review-only-stop-broad",
-  "commands": []
+  "batch_id": "20260821-chatgpt-full-review-548-final",
+  "commands": [
+    {
+      "kind": "RUN_FULL_REVIEW_548"
+    }
+  ]
 }
