@@ -1,9 +1,5 @@
 {
   "version": "gpt-runtime-control-v50",
-  "batch_id": "20260821-repair-full548-overblock-v2",
-  "commands": [
-    {
-      "kind": "RUN_FULL_REVIEW_548_V2"
-    }
-  ]
+  "batch_id": "20260822-stop-v2-after-v3-repair",
+  "commands": []
 }
