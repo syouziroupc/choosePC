@@ -17,7 +17,8 @@ The public verdict is gated. An average score alone cannot create a recommendati
 ## Decision gates
 
 - Known critical constraint -> `avoid`.
-- Unknown critical requirement or confidence below 58 -> `insufficient_data`.
+- Confidence below 45 -> `insufficient_data`.
+- Unknown critical requirement with otherwise usable evidence -> `avoid` for purchase; a missing required specification must not be interpreted as passing.
 - Risk >= 70 or use-fit < 45 -> `avoid`.
 - Adequate PC but value < 38 -> `overpriced`.
 - `strong_buy`: overall >= 87, fit >= 85, value >= 72, risk <= 25, confidence >= 78 **and purchase market source is `observed_market`**.

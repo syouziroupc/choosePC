@@ -55,7 +55,7 @@ const SOURCE_CONFIDENCE: Readonly<Record<TrustedMarketSource, number>> = {
 const MAX_LOOKBACK_DAYS = 365;
 const MAX_SAMPLES = 300;
 const MAX_CANDIDATE_ROWS = 600;
-const MIN_SIMILARITY = 0.58;
+const MIN_SIMILARITY = 0.55;
 const URL_DEDUPE_HOURS = 18;
 
 function sourceConfidence(source: string): number {
@@ -184,10 +184,15 @@ export async function lookupStoredMarket(env: PersistenceEnv, pc: NormalizedPC):
     const rows = await db.prepare(`
       SELECT product_signature, price_jpy, observed_at, source, similarity_json
       FROM market_observations
-      WHERE condition_type = ? AND observed_at >= ?
+      WHERE observed_at >= ?
+        AND (
+          ? = 'unknown'
+          OR condition_type = ?
+          OR (? IN ('used', 'refurbished') AND condition_type IN ('used', 'refurbished'))
+        )
       ORDER BY observed_at DESC
       LIMIT ?
-    `).bind(pc.condition.type, cutoff, MAX_CANDIDATE_ROWS).all<ObservationRow>();
+    `).bind(cutoff, pc.condition.type, pc.condition.type, pc.condition.type, MAX_CANDIDATE_ROWS).all<ObservationRow>();
 
     const observations: MarketObservationInput[] = [];
     for (const row of rows.results ?? []) {
@@ -240,7 +245,7 @@ export async function persistMarketEstimate(args: {
       estimate.sampleCount,
       estimate.confidence,
       new Date().toISOString(),
-      args.engineVersion ?? "market-0.2",
+      args.engineVersion ?? "market-0.3",
       safeJson({ signatureQuality: args.lookup.signatureQuality, acceptedSamples: args.lookup.acceptedSamples, rejectedSamples: args.lookup.rejectedSamples }),
     ).run();
   } catch (error) {

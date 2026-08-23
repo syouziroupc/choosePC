@@ -25,4 +25,11 @@ describe("market scoring", () => {
     const userEstimate = { fairPriceJpy: 100000, source: "user_estimate" as const, sampleCount: 1, confidence: 100, ageDays: 0 };
     expect(marketConfidence(userEstimate)).toBeLessThanOrEqual(45);
   });
+
+  it("shrinks sparse evidence toward neutral instead of issuing an extreme price score", () => {
+    const strong = { fairPriceJpy: 100000, source: "observed_market" as const, sampleCount: 30, effectiveSampleCount: 25, confidence: 95, ageDays: 1, dispersionPct: 8 };
+    const sparse = { fairPriceJpy: 100000, source: "observed_market" as const, sampleCount: 1, effectiveSampleCount: 1, confidence: 20, ageDays: 1, dispersionPct: 60 };
+    expect(scoreMarketValue(60000, strong)).toBeGreaterThan(scoreMarketValue(60000, sparse));
+    expect(scoreMarketValue(60000, sparse)).toBeLessThan(80);
+  });
 });

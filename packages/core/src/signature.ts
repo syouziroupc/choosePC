@@ -39,9 +39,25 @@ export function createProductSignature(pc: NormalizedPC, hardware: ResolvedHardw
   const storage = storageBucket(pc);
   const cpu = hardware.cpuId ?? token(pc.cpu?.raw);
   const gpu = hardware.gpuId ?? token(pc.gpu?.raw);
+  const shared = {
+    category: pc.category,
+    manufacturer,
+    model,
+    condition,
+    grade: pc.condition.grade ?? null,
+    cpu,
+    cpuGeneral: hardware.cpu?.general ?? null,
+    cpuSingle: hardware.cpu?.single ?? null,
+    gpu,
+    gpu1080: hardware.gpu?.gaming1080 ?? null,
+    gpuCompute: hardware.gpu?.compute ?? null,
+    gpuVariant: hardware.gpuVariant ?? pc.gpu?.variant ?? null,
+    ram,
+    storage,
+  };
 
   if (manufacturer && model) {
-    const components = { category: pc.category, manufacturer, model, condition, cpu, gpu, ram, storage };
+    const components = shared;
     return {
       key: ["model", pc.category, manufacturer, model, condition, cpu ?? "cpu-unknown", gpu ?? "gpu-none", `r${ram ?? 0}`, `s${storage ?? 0}`].join(":"),
       quality: "exact_model",
@@ -50,7 +66,7 @@ export function createProductSignature(pc: NormalizedPC, hardware: ResolvedHardw
   }
 
   if (cpu && (gpu || !pc.category.includes("gaming")) && ram) {
-    const components = { category: pc.category, manufacturer, model, condition, cpu, gpu, ram, storage };
+    const components = shared;
     return {
       key: ["config", pc.category, condition, cpu, gpu ?? "gpu-none", `r${ram}`, `s${storage ?? 0}`].join(":"),
       quality: "configuration",
@@ -58,7 +74,7 @@ export function createProductSignature(pc: NormalizedPC, hardware: ResolvedHardw
     };
   }
 
-  const components = { category: pc.category, manufacturer, model, condition, cpu, gpu, ram, storage };
+  const components = shared;
   return {
     key: ["partial", pc.category, condition, cpu ?? "cpu-unknown", gpu ?? "gpu-unknown", `r${ram ?? 0}`, `s${storage ?? 0}`].join(":"),
     quality: "partial",
@@ -70,15 +86,22 @@ export function signatureSimilarity(target: ProductSignature, candidate: Product
   if (target.key === candidate.key) return 1;
   const a = target.components;
   const b = candidate.components;
-  if (a.category !== b.category || a.condition !== b.condition) return 0;
+  if (a.category !== b.category) return 0;
 
-  let score = 0.15;
-  let availableWeight = 0.15;
+  const conditionCompatibility = a.condition === b.condition
+    ? 1
+    : a.condition === "unknown" || b.condition === "unknown"
+      ? 0.55
+      : new Set([a.condition, b.condition]).size === 2 && [a.condition, b.condition].every((value) => value === "used" || value === "refurbished")
+        ? 0.75
+        : 0;
+  if (conditionCompatibility === 0) return 0;
+
+  let score = 0.12 + 0.08 * conditionCompatibility;
   const compare = (key: string, weight: number, tolerance?: number) => {
     const av = a[key];
     const bv = b[key];
     if (av == null || bv == null) return;
-    availableWeight += weight;
     if (typeof av === "number" && typeof bv === "number" && tolerance) {
       const relative = Math.abs(av - bv) / Math.max(av, bv, 1);
       score += weight * Math.max(0, 1 - relative / tolerance);
@@ -87,12 +110,22 @@ export function signatureSimilarity(target: ProductSignature, candidate: Product
     }
   };
 
-  compare("manufacturer", 0.08);
+  compare("manufacturer", 0.05);
   compare("model", 0.30);
-  compare("cpu", 0.18);
-  compare("gpu", 0.18);
-  compare("ram", 0.06, 0.75);
+  if (a.cpu != null && a.cpu === b.cpu) score += 0.17;
+  else {
+    compare("cpuGeneral", 0.11, 0.45);
+    compare("cpuSingle", 0.06, 0.40);
+  }
+  if (a.gpu != null && a.gpu === b.gpu && (a.gpuVariant == null || b.gpuVariant == null || a.gpuVariant === b.gpuVariant)) score += 0.13;
+  else if (a.gpu == null && b.gpu == null && !String(a.category).includes("gaming")) score += 0.13;
+  else {
+    compare("gpu1080", 0.08, 0.55);
+    compare("gpuCompute", 0.05, 0.55);
+  }
+  compare("ram", 0.08, 0.75);
   compare("storage", 0.05, 1.0);
+  if (a.grade != null && b.grade != null) score += 0.02 * (a.grade === b.grade ? 1 : 0.35);
 
-  return Math.max(0, Math.min(1, score / Math.max(0.15, availableWeight)));
+  return Math.max(0, Math.min(1, score));
 }

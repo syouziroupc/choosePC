@@ -79,16 +79,54 @@ export interface MarketEstimate {
   lowPriceJpy?: number;
   highPriceJpy?: number;
   sampleCount: number;
+  effectiveSampleCount?: number;
   confidence: number;
   ageDays: number;
+  dispersionPct?: number;
+  dataQuality?: "strong" | "moderate" | "weak" | "sparse";
+  method?: "weighted_median_mad_v1" | "user_reference";
 }
 
 export interface ScoreVector { hardware: number; fit: number; value: number; condition: number; longevity: number; risk: number; confidence: number }
+export type ScoreEvidenceStatus = "measured" | "estimated" | "neutral" | "unavailable";
+export interface ScoreFactor {
+  key: string;
+  label: string;
+  score: number | null;
+  weight: number;
+  coverage: number;
+  status: ScoreEvidenceStatus;
+  actual?: number | null;
+  minimum?: number | null;
+  preferred?: number | null;
+}
+export interface ScoreComponentBreakdown {
+  key: "performance" | "fit" | "price" | "condition" | "longevity";
+  label: string;
+  score: number;
+  maxPoints: number;
+  earnedPoints: number;
+  coverage: number;
+  status: ScoreEvidenceStatus;
+  factors: ScoreFactor[];
+}
+export interface ScoreBreakdown {
+  method: "weighted_non_compensatory_v1";
+  maximumPoints: 100;
+  subtotalPoints: number;
+  riskPenalty: number;
+  evidencePenalty: number;
+  totalPoints: number;
+  evidenceCoverage: number;
+  components: ScoreComponentBreakdown[];
+}
 export interface HardConstraint { code: string; severity: "warning" | "critical"; known: boolean; message?: string }
 export interface ReasonDetail { code: string; kind: "positive" | "neutral" | "warning" | "critical"; message: string; metric?: RequirementMetric; actual?: number | null; minimum?: number | null; preferred?: number | null }
 
 export interface EvaluationResult {
   scores: ScoreVector & { overall: number };
+  /** Present on results produced by engine 0.3+; optional for persisted legacy fixtures. */
+  scoreBreakdown?: ScoreBreakdown;
   decision: Decision;
   reasons: string[];
   reasonDetails: ReasonDetail[];

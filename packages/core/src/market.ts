@@ -41,7 +41,30 @@ function buildEstimate(points: WeightedPoint[], sparse: boolean) {
   const freshnessScore=clamp(100-averageAge*1.1); const similarityScore=clamp(averageSimilarity*100); const sourceScore=clamp(averageSource*100); const dispersionScore=clamp(100-dispersion*110);
   let confidence=Math.round(clamp(sampleScore*0.30+similarityScore*0.25+sourceScore*0.20+freshnessScore*0.15+dispersionScore*0.10));
   if (sparse) confidence=Math.min(points.length===1 ? 28 : 42,confidence);
-  return { estimate:{fairPriceJpy,lowPriceJpy,highPriceJpy,sampleCount:points.length,confidence,ageDays:Math.round(averageAge),source:"observed_market" as const}, effectiveSamples, dispersion };
+  const dataQuality: NonNullable<MarketEstimate["dataQuality"]> = sparse
+    ? "sparse"
+    : confidence >= 70 && effectiveSamples >= 8
+      ? "strong"
+      : confidence >= 50 && effectiveSamples >= 3
+        ? "moderate"
+        : "weak";
+  return {
+    estimate:{
+      fairPriceJpy,
+      lowPriceJpy,
+      highPriceJpy,
+      sampleCount:points.length,
+      effectiveSampleCount:Math.round(effectiveSamples*100)/100,
+      confidence,
+      ageDays:Math.round(averageAge),
+      dispersionPct:Math.round(dispersion*1000)/10,
+      dataQuality,
+      method:"weighted_median_mad_v1" as const,
+      source:"observed_market" as const,
+    },
+    effectiveSamples,
+    dispersion,
+  };
 }
 
 export function estimateMarket(observations: readonly MarketObservationInput[], options: MarketEstimatorOptions = {}): MarketEstimationResult {

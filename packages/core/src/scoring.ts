@@ -66,13 +66,20 @@ export function extractMetric(metric: RequirementMetric, pc: NormalizedPC, hardw
 export function scoreMarketValue(priceJpy: number | null | undefined, market?: MarketEstimate | null): number {
   if (!priceJpy || priceJpy <= 0 || !market || market.fairPriceJpy <= 0) return 50;
   const ratio = priceJpy / market.fairPriceJpy;
-  return clamp(interpolate([[0.60,100],[0.75,98],[0.85,94],[0.95,86],[1.00,80],[1.08,70],[1.15,58],[1.25,42],[1.40,22],[1.60,5]], ratio));
+  const raw = clamp(interpolate([[0.60,100],[0.75,98],[0.85,94],[0.95,86],[1.00,80],[1.08,70],[1.15,58],[1.25,42],[1.40,22],[1.60,5]], ratio));
+  // Sparse, stale or user-entered comparisons must not create an extreme value score.
+  // Pull the result towards the neutral midpoint in proportion to the evidence quality.
+  const evidence = marketConfidence(market) / 100;
+  const trust = 0.25 + evidence * 0.75;
+  return clamp(50 + (raw - 50) * trust);
 }
 
 export function marketConfidence(market?: MarketEstimate | null): number {
   if (!market) return 25;
-  const sampleFactor = clamp(Math.log2(Math.max(1, market.sampleCount) + 1) / Math.log2(33) * 100);
+  const effectiveSamples = market.effectiveSampleCount ?? market.sampleCount;
+  const sampleFactor = clamp(Math.log2(Math.max(1, effectiveSamples) + 1) / Math.log2(33) * 100);
   const freshnessFactor = clamp(100 - Math.max(0, market.ageDays - 7) * 1.6);
-  const computed = clamp(market.confidence * 0.55 + sampleFactor * 0.25 + freshnessFactor * 0.20);
+  const dispersionFactor = market.dispersionPct == null ? market.confidence : clamp(100 - market.dispersionPct * 1.15);
+  const computed = clamp(market.confidence * 0.45 + sampleFactor * 0.25 + freshnessFactor * 0.18 + dispersionFactor * 0.12);
   return market.source === "user_estimate" ? Math.min(45, computed) : computed;
 }
