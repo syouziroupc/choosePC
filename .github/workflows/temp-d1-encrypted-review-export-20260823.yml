@@ -1,9 +1,7 @@
 name: TEMP Encrypted D1 Review Export 20260823
 
 on:
-  push:
-    paths:
-      - '.github/workflows/temp-d1-encrypted-review-export-20260823.yml'
+  pull_request:
   workflow_dispatch:
 
 permissions:
