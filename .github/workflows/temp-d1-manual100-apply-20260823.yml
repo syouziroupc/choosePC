@@ -1,0 +1,55 @@
+name: TEMP Manual100 D1 Apply 20260823
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 29
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Apply exact reviewed batch and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, urllib.request
+          base='https://temp-d1-review-export-pr-20260823-choosepc.syouziroupc.workers.dev'
+          apply_url=base+'/__temp_sales_review_apply_20260823'
+          status_url=base+'/__temp_sales_review_status_20260823'
+          req=urllib.request.Request(apply_url,data=b'',method='POST',headers={'Accept':'application/json','User-Agent':'choosePC-manual100-applier/1'})
+          with urllib.request.urlopen(req,timeout=60) as r:
+              applied=json.load(r)
+          if applied.get('ok') is not True:
+              raise SystemExit('apply failed: '+json.dumps(applied,ensure_ascii=False)[:3000])
+          with urllib.request.urlopen(urllib.request.Request(status_url,headers={'Accept':'application/json','User-Agent':'choosePC-manual100-verifier/1'}),timeout=60) as r:
+              status=json.load(r)
+          summary={
+            'ok': bool(status.get('ok')) and status.get('expected')==100 and status.get('found')==100 and status.get('blocked')==100 and status.get('ready')==0,
+            'batch': status.get('batch'),
+            'reviewed': 100,
+            'approved': 0,
+            'blocked': status.get('blocked'),
+            'ready': status.get('ready'),
+            'found': status.get('found'),
+            'prospectEmailSend': applied.get('prospectEmailSend',0),
+            'prepareSend': applied.get('prepareSend',0),
+          }
+          print(json.dumps(summary,ensure_ascii=False))
+          if not summary['ok']:
+              raise SystemExit('verification failed')
+          with open('manual100-apply-summary.json','w',encoding='utf-8') as f:
+              json.dump(summary,f,ensure_ascii=False,indent=2)
+          PY
+      - name: Upload verification summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: manual100-apply-summary
+          path: manual100-apply-summary.json
+          if-no-files-found: error
+          retention-days: 1
