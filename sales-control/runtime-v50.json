@@ -1,6 +1,6 @@
 {
   "version": "gpt-runtime-control-v50",
-  "batch_id": "20260824-review448-loose-2",
+  "batch_id": "20260824-review448-loose-3",
   "commands": [
     {"kind":"RUN_BROAD_REVIEW_100"}
   ]
