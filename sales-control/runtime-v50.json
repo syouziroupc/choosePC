@@ -1,5 +1,7 @@
 {
   "version": "gpt-runtime-control-v50",
-  "batch_id": "20260822-stop-v2-after-v3-repair",
-  "commands": []
+  "batch_id": "20260824-review448-loose-1",
+  "commands": [
+    {"kind":"RUN_BROAD_REVIEW_100"}
+  ]
 }
