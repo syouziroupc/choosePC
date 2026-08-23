@@ -1,0 +1,1 @@
+Temporary PR trigger for encrypted 100-row D1 audit export. No plaintext prospect data and no email delivery.
