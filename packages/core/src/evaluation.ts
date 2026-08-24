@@ -164,20 +164,12 @@ function deriveConfidence(input: EvaluationInput, essentialKnown: number, essent
   return clamp(Math.min(coreEvidence, criticalEvidence + 5));
 }
 
-/**
- * Legacy combined score kept for compatibility. From v0.3 it is deliberately
- * derived from the two public purchase criteria only: use-case fit and price.
- */
+/** Compatibility score only. New purchase UIs should use purchaseAssessment. */
 export function aggregateScore(scores: ScoreVector): number {
   return clamp((scores.fit + scores.value) / 2);
 }
 
-/**
- * Purchase decision policy. Condition/longevity/hardware diagnostics no longer
- * influence the verdict directly. Known hard failures still override the two
- * purchase criteria so an unsafe or impossible configuration cannot be rescued
- * by a low price.
- */
+/** Purchase decision policy: price + use-case fit, with hard constraints as gates. */
 export function decide(scores: ScoreVector, constraints: HardConstraint[] = [], priceKnown = true): Decision {
   if (constraints.some((x) => x.severity === "critical" && x.known)) return "avoid";
   if (constraints.some((x) => x.severity === "critical" && !x.known) || scores.confidence < 58) return "insufficient_data";
@@ -330,13 +322,15 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
   const confidence = deriveConfidence(input, essentialKnown, essentialTotal);
   const scores: ScoreVector = { hardware, fit, value, condition, longevity, risk, confidence };
 
-  if (!input.market && (input.context ?? "purchase") === "purchase") warnings.push("比較できる相場データがないため、販売価格は判定保留です。性能適合性は別に確認できます。");
+  const context = input.context ?? "purchase";
+  if (!input.market && context === "purchase") warnings.push("比較できる相場データがないため、販売価格は判定保留です。性能適合性は別に確認できます。");
   if (input.market?.source === "user_estimate") warnings.push("比較相場は入力された参考価格です。実売データとは別に扱っています。");
   if (input.market && value >= 85) reasons.push({ code: "value:good", kind: "positive", message: "入力された比較相場に対して販売価格は安めです" });
   if (input.market && value < 45) reasons.push({ code: "value:poor", kind: "warning", message: "入力された比較相場に対して販売価格が高めです" });
 
-  const priceKnown = Boolean(input.market && input.pc.commerce.priceJpy != null);
-  const decision = applyMarketTrustGate(decide(scores, constraints, priceKnown), input, warnings);
+  // Ownership/replacement decisions are not purchase-price decisions and must remain usable without market evidence.
+  const priceKnownForDecision = context === "ownership" || Boolean(input.market && input.pc.commerce.priceJpy != null);
+  const decision = applyMarketTrustGate(decide(scores, constraints, priceKnownForDecision), input, warnings);
   return {
     scores: { ...scores, overall: aggregateScore(scores) },
     purchaseAssessment: buildPurchaseAssessment(input, scores, reasons, constraints),
