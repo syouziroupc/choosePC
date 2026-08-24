@@ -17,6 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install Japanese font for representative screenshots
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-cache -f
+
       - name: Wait for szpc choosePC relay deployment
         shell: bash
         run: |
