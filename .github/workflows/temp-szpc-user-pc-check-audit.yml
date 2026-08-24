@@ -104,65 +104,70 @@ jobs:
           const { chromium } = require('playwright');
           const { execFileSync } = require('child_process');
           const fs = require('fs');
-          const site = process.env.SITE;
-          let executablePath = '';
-          for (const candidate of ['google-chrome', 'chromium', 'chromium-browser']) {
-            try { executablePath = execFileSync('which', [candidate], { encoding: 'utf8' }).trim(); } catch {}
-            if (executablePath) break;
-          }
-          if (!executablePath) throw new Error('Chrome/Chromium not found');
-          const browser = await chromium.launch({ headless: true, executablePath });
-          const cases = [
-            { name: 'desktop', width: 1440, height: 1100 },
-            { name: 'mobile', width: 390, height: 844 },
-          ];
-          for (const vp of cases) {
-            const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, reducedMotion: 'reduce' });
-            const page = await context.newPage();
-            const errors = [];
-            page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-            page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
-            const response = await page.goto(`${site}/pc-check/?audit=${process.env.GITHUB_SHA}`, { waitUntil: 'networkidle', timeout: 45000 });
-            if (!response?.ok()) throw new Error(`${vp.name}: HTTP ${response?.status()}`);
-            await page.screenshot({ path: `visual-artifacts/pc-check-${vp.name}-initial.png`, fullPage: true, animations: 'disabled' });
-            const initial = await page.evaluate(() => ({
-              h1: document.querySelector('h1')?.textContent?.trim(),
-              width: document.documentElement.clientWidth,
-              scrollWidth: document.documentElement.scrollWidth,
-              text: document.body.innerText,
-            }));
-            if (initial.h1 !== 'このパソコン、買って大丈夫？') throw new Error(`${vp.name}: wrong h1 ${initial.h1}`);
-            if (initial.scrollWidth > initial.width + 2) throw new Error(`${vp.name}: horizontal overflow ${initial.scrollWidth} > ${initial.width}`);
-            for (const forbidden of ['APIバージョン', 'D1 永続化', 'A8.net', '検証ページ / NOINDEX']) {
-              if (initial.text.includes(forbidden)) throw new Error(`${vp.name}: operational text leaked: ${forbidden}`);
+          (async () => {
+            const site = process.env.SITE;
+            let executablePath = '';
+            for (const candidate of ['google-chrome', 'chromium', 'chromium-browser']) {
+              try { executablePath = execFileSync('which', [candidate], { encoding: 'utf8' }).trim(); } catch {}
+              if (executablePath) break;
             }
-            await page.click('#manual-open');
-            await page.waitForSelector('#evaluate-form:not([hidden])');
-            await page.fill('#cpu', 'Intel Core i5-1235U');
-            await page.fill('#gpu', 'Intel Iris Xe Graphics');
-            await page.fill('#ram', '16');
-            await page.fill('#storage', '512');
-            await page.fill('#price', '45000');
-            await page.selectOption('#condition', 'used');
-            await page.screenshot({ path: `visual-artifacts/pc-check-${vp.name}-input.png`, fullPage: true, animations: 'disabled' });
-            await page.click('#evaluate-submit');
-            await page.waitForSelector('#result-section:not([hidden])', { timeout: 30000 });
-            const result = await page.evaluate(() => ({
-              title: document.querySelector('#decision-title')?.textContent?.trim(),
-              overall: document.querySelector('#overall-score')?.textContent?.trim(),
-              width: document.documentElement.clientWidth,
-              scrollWidth: document.documentElement.scrollWidth,
-            }));
-            if (!result.title || result.title === '判定結果') throw new Error(`${vp.name}: result title not rendered`);
-            if (!result.overall || result.overall === '-') throw new Error(`${vp.name}: overall score not rendered`);
-            if (result.scrollWidth > result.width + 2) throw new Error(`${vp.name}: result horizontal overflow`);
-            await page.screenshot({ path: `visual-artifacts/pc-check-${vp.name}-result.png`, fullPage: true, animations: 'disabled' });
-            if (errors.length) throw new Error(`${vp.name}: browser errors: ${errors.join(' | ')}`);
-            await context.close();
-          }
-          await browser.close();
-          const files = fs.readdirSync('visual-artifacts').filter((name) => name.endsWith('.png'));
-          if (files.length !== 6) throw new Error(`Expected 6 screenshots, got ${files.length}`);
+            if (!executablePath) throw new Error('Chrome/Chromium not found');
+            const browser = await chromium.launch({ headless: true, executablePath });
+            const cases = [
+              { name: 'desktop', width: 1440, height: 1100 },
+              { name: 'mobile', width: 390, height: 844 },
+            ];
+            for (const vp of cases) {
+              const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, reducedMotion: 'reduce' });
+              const page = await context.newPage();
+              const errors = [];
+              page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+              page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+              const response = await page.goto(`${site}/pc-check/?audit=${process.env.GITHUB_SHA}`, { waitUntil: 'networkidle', timeout: 45000 });
+              if (!response?.ok()) throw new Error(`${vp.name}: HTTP ${response?.status()}`);
+              await page.screenshot({ path: `visual-artifacts/pc-check-${vp.name}-initial.png`, fullPage: true, animations: 'disabled' });
+              const initial = await page.evaluate(() => ({
+                h1: document.querySelector('h1')?.textContent?.trim(),
+                width: document.documentElement.clientWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+                text: document.body.innerText,
+              }));
+              if (initial.h1 !== 'このパソコン、買って大丈夫？') throw new Error(`${vp.name}: wrong h1 ${initial.h1}`);
+              if (initial.scrollWidth > initial.width + 2) throw new Error(`${vp.name}: horizontal overflow ${initial.scrollWidth} > ${initial.width}`);
+              for (const forbidden of ['APIバージョン', 'D1 永続化', 'A8.net', '検証ページ / NOINDEX']) {
+                if (initial.text.includes(forbidden)) throw new Error(`${vp.name}: operational text leaked: ${forbidden}`);
+              }
+              await page.click('#manual-open');
+              await page.waitForSelector('#evaluate-form:not([hidden])');
+              await page.fill('#cpu', 'Intel Core i5-1235U');
+              await page.fill('#gpu', 'Intel Iris Xe Graphics');
+              await page.fill('#ram', '16');
+              await page.fill('#storage', '512');
+              await page.fill('#price', '45000');
+              await page.selectOption('#condition', 'used');
+              await page.screenshot({ path: `visual-artifacts/pc-check-${vp.name}-input.png`, fullPage: true, animations: 'disabled' });
+              await page.click('#evaluate-submit');
+              await page.waitForSelector('#result-section:not([hidden])', { timeout: 30000 });
+              const result = await page.evaluate(() => ({
+                title: document.querySelector('#decision-title')?.textContent?.trim(),
+                overall: document.querySelector('#overall-score')?.textContent?.trim(),
+                width: document.documentElement.clientWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+              }));
+              if (!result.title || result.title === '判定結果') throw new Error(`${vp.name}: result title not rendered`);
+              if (!result.overall || result.overall === '-') throw new Error(`${vp.name}: overall score not rendered`);
+              if (result.scrollWidth > result.width + 2) throw new Error(`${vp.name}: result horizontal overflow`);
+              await page.screenshot({ path: `visual-artifacts/pc-check-${vp.name}-result.png`, fullPage: true, animations: 'disabled' });
+              if (errors.length) throw new Error(`${vp.name}: browser errors: ${errors.join(' | ')}`);
+              await context.close();
+            }
+            await browser.close();
+            const files = fs.readdirSync('visual-artifacts').filter((name) => name.endsWith('.png'));
+            if (files.length !== 6) throw new Error(`Expected 6 screenshots, got ${files.length}`);
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
           NODE
 
       - name: Upload live screenshots and diagnostics
