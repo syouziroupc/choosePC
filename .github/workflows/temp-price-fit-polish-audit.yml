@@ -1,0 +1,97 @@
+name: temp-price-fit-polish-audit
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/temp-price-fit-polish-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  polish-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SITE: https://www.szpc.jp
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install browser tooling and Japanese fonts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save playwright@1.55.0
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-cache -f
+      - name: Wait for final CSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            curl --fail --silent --show-error --location --max-time 15 -H 'Cache-Control: no-cache' "${SITE}/assets/pc-check-verify.css?audit=${GITHUB_SHA}" -o /tmp/pc.css || true
+            if grep -Fq '#fit-axis[data-verdict="insufficient"] .axis-score{display:none}' /tmp/pc.css 2>/dev/null; then
+              echo "Final CSS is live on attempt ${attempt}"
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Verify insufficient result prioritizes weakness over weighted score
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p visual-artifacts
+          node <<'NODE'
+          (async () => {
+            const { chromium } = require('playwright');
+            const { execFileSync } = require('child_process');
+            let executablePath = '';
+            for (const candidate of ['google-chrome', 'chromium', 'chromium-browser']) {
+              try { executablePath = execFileSync('which', [candidate], { encoding: 'utf8' }).trim(); } catch {}
+              if (executablePath) break;
+            }
+            if (!executablePath) throw new Error('Chrome/Chromium not found');
+            const browser = await chromium.launch({ headless: true, executablePath });
+            for (const vp of [{ name: 'desktop', width: 1440, height: 1100 }, { name: 'mobile', width: 390, height: 844 }]) {
+              const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, reducedMotion: 'reduce' });
+              const page = await context.newPage();
+              const errors = [];
+              page.on('pageerror', e => errors.push(e.message));
+              page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+              await page.goto(`${process.env.SITE}/pc-check/?audit=${process.env.GITHUB_SHA}`, { waitUntil: 'networkidle', timeout: 45000 });
+              await page.click('#manual-open');
+              await page.fill('#cpu', 'Intel Core i5-1235U');
+              await page.fill('#gpu', 'Intel Iris Xe Graphics');
+              await page.fill('#ram', '4');
+              await page.fill('#storage', '512');
+              await page.fill('#price', '45000');
+              await page.selectOption('#condition', 'used');
+              await page.click('#evaluate-submit');
+              await page.waitForSelector('#result-section:not([hidden])', { timeout: 30000 });
+              const state = await page.evaluate(() => ({
+                verdict: document.querySelector('#fit-verdict')?.textContent?.trim(),
+                scoreDisplay: getComputedStyle(document.querySelector('#fit-axis .axis-score')).display,
+                weakness: document.querySelector('#weakness-list')?.innerText || '',
+                width: document.documentElement.clientWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+              }));
+              if (state.verdict !== '不足') throw new Error(`${vp.name}: expected insufficient verdict`);
+              if (state.scoreDisplay !== 'none') throw new Error(`${vp.name}: weighted score still visible on mandatory failure`);
+              if (!state.weakness.includes('メモリ容量') || !state.weakness.includes('現在 4GB')) throw new Error(`${vp.name}: RAM weakness missing`);
+              if (state.scrollWidth > state.width + 2) throw new Error(`${vp.name}: horizontal overflow`);
+              if (errors.length) throw new Error(`${vp.name}: browser errors: ${errors.join(' | ')}`);
+              await page.screenshot({ path: `visual-artifacts/${vp.name}-final-result.png`, fullPage: true, animations: 'disabled' });
+              await context.close();
+            }
+            await browser.close();
+          })().catch(error => { console.error(error); process.exit(1); });
+          NODE
+      - name: Upload final screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: price-fit-polish-${{ github.sha }}
+          path: visual-artifacts/*.png
+          if-no-files-found: warn
+          retention-days: 7
