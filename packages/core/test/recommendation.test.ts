@@ -4,7 +4,21 @@ import { attachCommercialMetadata } from "../src/monetization";
 import type { EvaluationResult } from "../src/types";
 
 function result(overall: number, decision: EvaluationResult["decision"]): EvaluationResult {
-  return { scores: { overall, hardware: 80, fit: 80, value: 80, condition: 80, longevity: 80, risk: 10, confidence: 85 }, decision, reasons: [], reasonDetails: [], warnings: [], constraints: [], engineVersion: "x", knowledgeVersion: "x" };
+  return {
+    scores: { overall, hardware: 80, fit: 80, value: 80, condition: 80, longevity: 80, risk: 10, confidence: 85 },
+    purchaseAssessment: {
+      price: { score: 80, verdict: "good", marketAvailable: true, fairPriceJpy: 50000 },
+      performanceFit: { score: 80, verdict: "sufficient" },
+      weaknesses: [],
+    },
+    decision,
+    reasons: [],
+    reasonDetails: [],
+    warnings: [],
+    constraints: [],
+    engineVersion: "x",
+    knowledgeVersion: "x",
+  };
 }
 
 describe("ranking / monetization separation", () => {
