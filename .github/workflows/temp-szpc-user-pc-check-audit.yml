@@ -1,0 +1,180 @@
+name: temp-szpc-user-pc-check-audit
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/temp-szpc-user-pc-check-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  live-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SITE: https://www.szpc.jp
+      OPS: https://choosepc.syouziroupc.workers.dev
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install browser tooling and Japanese fonts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save playwright@1.55.0
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-cache -f
+
+      - name: Wait for customer-facing PC checker deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            curl --fail --silent --show-error --location --max-time 15 \
+              -H 'Cache-Control: no-cache' \
+              "${SITE}/pc-check/?audit=${GITHUB_SHA}" -o /tmp/pc-check.html || true
+            if [ -s /tmp/pc-check.html ] \
+              && grep -q 'このパソコン、買って大丈夫？' /tmp/pc-check.html \
+              && grep -q '商品ページURL' /tmp/pc-check.html \
+              && ! grep -q 'PC判定・API 検証版' /tmp/pc-check.html \
+              && ! grep -q 'D1 永続化' /tmp/pc-check.html \
+              && ! grep -q 'A8.net' /tmp/pc-check.html \
+              && ! grep -qi 'name="robots" content="noindex' /tmp/pc-check.html; then
+              echo "Customer-facing PC checker is live on attempt ${attempt}"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/pc-check.html || true
+          exit 1
+
+      - name: Verify operations remain on choosePC Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --max-time 15 \
+            -H 'Cache-Control: no-cache' "${OPS}/?audit=${GITHUB_SHA}" -o /tmp/ops.html
+          grep -q 'choosePC Operations' /tmp/ops.html
+          grep -q 'API利用状況' /tmp/ops.html
+          grep -q 'アフィリエイト・送客設定' /tmp/ops.html
+
+      - name: Verify purchase evaluation through szpc relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/evaluate.json <<'JSON'
+          {
+            "pc": {
+              "category": "general_laptop",
+              "cpu": {"raw": "Intel Core i5-1235U", "confidence": 95},
+              "gpu": {"raw": "Intel Iris Xe Graphics", "variant": "integrated", "confidence": 95},
+              "memory": {"sizeGb": 16, "upgradeable": null},
+              "storage": [{"kind": "unknown", "sizeGb": 512}],
+              "display": {"refreshHz": 60},
+              "mobility": {"weightKg": 1.2},
+              "condition": {"type": "used", "grade": "unknown", "batteryHealthPct": 85, "defects": []},
+              "commerce": {"priceJpy": 45000, "warrantyDays": 90, "sourceUrl": null},
+              "confidence": {},
+              "extra": {"coolingScore": null, "upgradeabilityScore": null}
+            },
+            "useCase": "office"
+          }
+          JSON
+          code="$(curl --silent --show-error --max-time 20 -D /tmp/evaluate.headers -o /tmp/evaluate.out -w '%{http_code}' \
+            -H 'Cache-Control: no-cache' -H 'Content-Type: application/json' \
+            -H 'X-ChoosePC-Client: 123e4567-e89b-42d3-a456-426614174000' \
+            --data-binary @/tmp/evaluate.json "${SITE}/api/choosepc/v1/evaluate")"
+          test "$code" = "200"
+          grep -qi '^x-szpc-api-proxy: choosepc-public-v1' /tmp/evaluate.headers
+          node <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/evaluate.out', 'utf8'));
+          if (!body.result || typeof body.result !== 'object') process.exit(1);
+          if (typeof body.result.decision !== 'string') process.exit(1);
+          NODE
+
+      - name: Screenshot and interact with live customer flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p visual-artifacts
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          const { execFileSync } = require('child_process');
+          const fs = require('fs');
+          const site = process.env.SITE;
+          let executablePath = '';
+          for (const candidate of ['google-chrome', 'chromium', 'chromium-browser']) {
+            try { executablePath = execFileSync('which', [candidate], { encoding: 'utf8' }).trim(); } catch {}
+            if (executablePath) break;
+          }
+          if (!executablePath) throw new Error('Chrome/Chromium not found');
+          const browser = await chromium.launch({ headless: true, executablePath });
+          const cases = [
+            { name: 'desktop', width: 1440, height: 1100 },
+            { name: 'mobile', width: 390, height: 844 },
+          ];
+          for (const vp of cases) {
+            const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, reducedMotion: 'reduce' });
+            const page = await context.newPage();
+            const errors = [];
+            page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+            page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+            const response = await page.goto(`${site}/pc-check/?audit=${process.env.GITHUB_SHA}`, { waitUntil: 'networkidle', timeout: 45000 });
+            if (!response?.ok()) throw new Error(`${vp.name}: HTTP ${response?.status()}`);
+            await page.screenshot({ path: `visual-artifacts/pc-check-${vp.name}-initial.png`, fullPage: true, animations: 'disabled' });
+            const initial = await page.evaluate(() => ({
+              h1: document.querySelector('h1')?.textContent?.trim(),
+              width: document.documentElement.clientWidth,
+              scrollWidth: document.documentElement.scrollWidth,
+              text: document.body.innerText,
+            }));
+            if (initial.h1 !== 'このパソコン、買って大丈夫？') throw new Error(`${vp.name}: wrong h1 ${initial.h1}`);
+            if (initial.scrollWidth > initial.width + 2) throw new Error(`${vp.name}: horizontal overflow ${initial.scrollWidth} > ${initial.width}`);
+            for (const forbidden of ['APIバージョン', 'D1 永続化', 'A8.net', '検証ページ / NOINDEX']) {
+              if (initial.text.includes(forbidden)) throw new Error(`${vp.name}: operational text leaked: ${forbidden}`);
+            }
+            await page.click('#manual-open');
+            await page.waitForSelector('#evaluate-form:not([hidden])');
+            await page.fill('#cpu', 'Intel Core i5-1235U');
+            await page.fill('#gpu', 'Intel Iris Xe Graphics');
+            await page.fill('#ram', '16');
+            await page.fill('#storage', '512');
+            await page.fill('#price', '45000');
+            await page.selectOption('#condition', 'used');
+            await page.screenshot({ path: `visual-artifacts/pc-check-${vp.name}-input.png`, fullPage: true, animations: 'disabled' });
+            await page.click('#evaluate-submit');
+            await page.waitForSelector('#result-section:not([hidden])', { timeout: 30000 });
+            const result = await page.evaluate(() => ({
+              title: document.querySelector('#decision-title')?.textContent?.trim(),
+              overall: document.querySelector('#overall-score')?.textContent?.trim(),
+              width: document.documentElement.clientWidth,
+              scrollWidth: document.documentElement.scrollWidth,
+            }));
+            if (!result.title || result.title === '判定結果') throw new Error(`${vp.name}: result title not rendered`);
+            if (!result.overall || result.overall === '-') throw new Error(`${vp.name}: overall score not rendered`);
+            if (result.scrollWidth > result.width + 2) throw new Error(`${vp.name}: result horizontal overflow`);
+            await page.screenshot({ path: `visual-artifacts/pc-check-${vp.name}-result.png`, fullPage: true, animations: 'disabled' });
+            if (errors.length) throw new Error(`${vp.name}: browser errors: ${errors.join(' | ')}`);
+            await context.close();
+          }
+          await browser.close();
+          const files = fs.readdirSync('visual-artifacts').filter((name) => name.endsWith('.png'));
+          if (files.length !== 6) throw new Error(`Expected 6 screenshots, got ${files.length}`);
+          NODE
+
+      - name: Upload live screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: szpc-user-pc-check-audit-${{ github.sha }}
+          path: |
+            visual-artifacts/*.png
+            /tmp/pc-check.html
+            /tmp/ops.html
+            /tmp/evaluate.headers
+            /tmp/evaluate.out
+          if-no-files-found: warn
+          retention-days: 7
