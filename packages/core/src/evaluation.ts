@@ -1,7 +1,16 @@
-import type { Decision, EvaluationInput, EvaluationResult, HardConstraint, ReasonDetail, ScoreVector } from "./types";
+import type {
+  Decision,
+  EvaluationInput,
+  EvaluationResult,
+  HardConstraint,
+  PurchaseAssessment,
+  ReasonDetail,
+  ScoreVector,
+  WeaknessDetail,
+} from "./types";
 import { clamp, extractMetric, marketConfidence, scoreMarketValue, scoreRequirement } from "./scoring";
 
-export const ENGINE_VERSION = "0.2.1";
+export const ENGINE_VERSION = "0.3.0";
 
 const metricLabels: Record<string, string> = {
   cpuGeneral: "CPUの総合性能",
@@ -22,6 +31,15 @@ const metricLabels: Record<string, string> = {
 
 function metricLabel(metric: string): string {
   return metricLabels[metric] ?? "この項目";
+}
+
+function constraintLabel(code: string): string {
+  if (code === "desktop:psu_insufficient" || code === "desktop:psu_unknown") return "電源容量";
+  if (code === "gaming_laptop:tgp_unknown") return "GPUの電力設定";
+  if (code === "gaming:cooling_unknown") return "冷却性能";
+  if (code.startsWith("missing:")) return metricLabel(code.slice("missing:".length));
+  if (code.startsWith("below_min:")) return metricLabel(code.slice("below_min:".length));
+  return "確認が必要な項目";
 }
 
 function weightedAverage(values: Array<{ value: number; weight: number }>, fallback = 50): number {
@@ -146,22 +164,29 @@ function deriveConfidence(input: EvaluationInput, essentialKnown: number, essent
   return clamp(Math.min(coreEvidence, criticalEvidence + 5));
 }
 
+/**
+ * Legacy combined score kept for compatibility. From v0.3 it is deliberately
+ * derived from the two public purchase criteria only: use-case fit and price.
+ */
 export function aggregateScore(scores: ScoreVector): number {
-  const base = scores.hardware * 0.16 + scores.fit * 0.34 + scores.value * 0.24 + scores.condition * 0.08 + scores.longevity * 0.18;
-  return clamp(base - Math.max(0, scores.risk - 20) * 0.38 - Math.max(0, 70 - scores.confidence) * 0.20);
+  return clamp((scores.fit + scores.value) / 2);
 }
 
-export function decide(scores: ScoreVector, constraints: HardConstraint[] = []): Decision {
+/**
+ * Purchase decision policy. Condition/longevity/hardware diagnostics no longer
+ * influence the verdict directly. Known hard failures still override the two
+ * purchase criteria so an unsafe or impossible configuration cannot be rescued
+ * by a low price.
+ */
+export function decide(scores: ScoreVector, constraints: HardConstraint[] = [], priceKnown = true): Decision {
   if (constraints.some((x) => x.severity === "critical" && x.known)) return "avoid";
   if (constraints.some((x) => x.severity === "critical" && !x.known) || scores.confidence < 58) return "insufficient_data";
-  if (scores.risk >= 70 || scores.fit < 45) return "avoid";
-  if (scores.value < 38 && scores.fit >= 65) return "overpriced";
-  const overall = aggregateScore(scores);
-  if (overall >= 87 && scores.fit >= 85 && scores.value >= 72 && scores.risk <= 25 && scores.confidence >= 78) return "strong_buy";
-  if (overall >= 74 && scores.fit >= 75 && scores.value >= 55 && scores.risk <= 45 && scores.confidence >= 68) return "buy";
-  if (scores.fit >= 60 && scores.value >= 42 && scores.risk < 60) return "fair";
-  if (scores.fit >= 60 && scores.value < 42) return "overpriced";
-  return "avoid";
+  if (scores.fit < 60) return "avoid";
+  if (!priceKnown) return "insufficient_data";
+  if (scores.value < 42) return "overpriced";
+  if (scores.fit >= 90 && scores.value >= 75 && scores.confidence >= 78) return "strong_buy";
+  if (scores.fit >= 75 && scores.value >= 55 && scores.confidence >= 68) return "buy";
+  return "fair";
 }
 
 function applyMarketTrustGate(decision: Decision, input: EvaluationInput, warnings: string[]): Decision {
@@ -169,6 +194,84 @@ function applyMarketTrustGate(decision: Decision, input: EvaluationInput, warnin
   if (input.market?.source === "observed_market") return decision;
   warnings.push("実売相場の観測データがないため、入力された比較相場だけでは最上位の購入推奨にはしません。");
   return "buy";
+}
+
+function priceVerdict(value: number, marketAvailable: boolean): PurchaseAssessment["price"]["verdict"] {
+  if (!marketAvailable) return "unknown";
+  if (value >= 75) return "good";
+  if (value >= 45) return "fair";
+  return "high";
+}
+
+function fitVerdict(fit: number, constraints: HardConstraint[], confidence: number): PurchaseAssessment["performanceFit"]["verdict"] {
+  if (constraints.some((item) => item.severity === "critical" && !item.known) || confidence < 58) return "unknown";
+  if (constraints.some((item) => item.severity === "critical" && item.known) || fit < 60) return "insufficient";
+  if (fit >= 75) return "sufficient";
+  return "borderline";
+}
+
+function buildWeaknesses(reasons: ReasonDetail[], constraints: HardConstraint[]): WeaknessDetail[] {
+  const weaknesses: WeaknessDetail[] = [];
+  const seen = new Set<string>();
+
+  for (const reason of reasons) {
+    if (reason.kind === "positive") continue;
+    const belowMinimum = reason.code.startsWith("below_min:");
+    const belowPreferred = reason.code.startsWith("acceptable:");
+    if (!belowMinimum && !belowPreferred && reason.kind !== "warning" && reason.kind !== "critical") continue;
+
+    const label = reason.metric ? metricLabel(reason.metric) : "性能項目";
+    const severity: WeaknessDetail["severity"] = reason.kind === "critical"
+      ? "critical"
+      : belowMinimum || reason.kind === "warning"
+        ? "warning"
+        : "notice";
+    const message = belowPreferred
+      ? `${label}は最低目安を満たしていますが、推奨水準までは余裕がありません`
+      : reason.message;
+    weaknesses.push({
+      code: reason.code,
+      metric: reason.metric,
+      label,
+      severity,
+      message,
+      actual: reason.actual,
+      minimum: reason.minimum,
+      preferred: reason.preferred,
+    });
+    seen.add(reason.code);
+  }
+
+  for (const constraint of constraints) {
+    if (seen.has(constraint.code) || constraint.code.startsWith("below_min:")) continue;
+    if (!constraint.message) continue;
+    weaknesses.push({
+      code: constraint.code,
+      label: constraintLabel(constraint.code),
+      severity: constraint.severity === "critical" ? "critical" : "warning",
+      message: constraint.message,
+    });
+  }
+
+  const rank: Record<WeaknessDetail["severity"], number> = { critical: 0, warning: 1, notice: 2 };
+  return weaknesses.sort((a, b) => rank[a.severity] - rank[b.severity]).slice(0, 8);
+}
+
+function buildPurchaseAssessment(input: EvaluationInput, scores: ScoreVector, reasons: ReasonDetail[], constraints: HardConstraint[]): PurchaseAssessment {
+  const marketAvailable = Boolean(input.market && input.pc.commerce.priceJpy != null);
+  return {
+    price: {
+      score: marketAvailable ? scores.value : null,
+      verdict: priceVerdict(scores.value, marketAvailable),
+      marketAvailable,
+      fairPriceJpy: input.market?.fairPriceJpy ?? null,
+    },
+    performanceFit: {
+      score: scores.fit,
+      verdict: fitVerdict(scores.fit, constraints, scores.confidence),
+    },
+    weaknesses: buildWeaknesses(reasons, constraints),
+  };
 }
 
 export function evaluatePc(input: EvaluationInput): EvaluationResult {
@@ -227,14 +330,16 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
   const confidence = deriveConfidence(input, essentialKnown, essentialTotal);
   const scores: ScoreVector = { hardware, fit, value, condition, longevity, risk, confidence };
 
-  if (!input.market && (input.context ?? "purchase") === "purchase") warnings.push("比較できる相場データがないため、販売価格は良い・悪いのどちらにも判定していません。");
+  if (!input.market && (input.context ?? "purchase") === "purchase") warnings.push("比較できる相場データがないため、販売価格は判定保留です。性能適合性は別に確認できます。");
   if (input.market?.source === "user_estimate") warnings.push("比較相場は入力された参考価格です。実売データとは別に扱っています。");
-  if (value >= 85) reasons.push({ code: "value:good", kind: "positive", message: "入力された比較相場に対して販売価格は安めです" });
-  if (value < 45) reasons.push({ code: "value:poor", kind: "warning", message: "入力された比較相場に対して販売価格が高めです" });
+  if (input.market && value >= 85) reasons.push({ code: "value:good", kind: "positive", message: "入力された比較相場に対して販売価格は安めです" });
+  if (input.market && value < 45) reasons.push({ code: "value:poor", kind: "warning", message: "入力された比較相場に対して販売価格が高めです" });
 
-  const decision = applyMarketTrustGate(decide(scores, constraints), input, warnings);
+  const priceKnown = Boolean(input.market && input.pc.commerce.priceJpy != null);
+  const decision = applyMarketTrustGate(decide(scores, constraints, priceKnown), input, warnings);
   return {
     scores: { ...scores, overall: aggregateScore(scores) },
+    purchaseAssessment: buildPurchaseAssessment(input, scores, reasons, constraints),
     decision,
     reasons: reasons.map((r) => r.code),
     reasonDetails: reasons,
@@ -246,13 +351,24 @@ export function evaluatePc(input: EvaluationInput): EvaluationResult {
 }
 
 export function buildEvaluationResult(args: { scores: ScoreVector; constraints?: HardConstraint[]; reasons?: string[]; warnings?: string[]; engineVersion: string; knowledgeVersion: string }): EvaluationResult {
+  const constraints = args.constraints ?? [];
   return {
     scores: { ...args.scores, overall: aggregateScore(args.scores) },
-    decision: decide(args.scores, args.constraints ?? []),
+    purchaseAssessment: {
+      price: { score: args.scores.value, verdict: priceVerdict(args.scores.value, true), marketAvailable: true },
+      performanceFit: { score: args.scores.fit, verdict: fitVerdict(args.scores.fit, constraints, args.scores.confidence) },
+      weaknesses: constraints.map((constraint) => ({
+        code: constraint.code,
+        label: constraintLabel(constraint.code),
+        severity: constraint.severity === "critical" ? "critical" : "warning",
+        message: constraint.message ?? "確認が必要です",
+      })),
+    },
+    decision: decide(args.scores, constraints),
     reasons: args.reasons ?? [],
     reasonDetails: [],
     warnings: args.warnings ?? [],
-    constraints: args.constraints ?? [],
+    constraints,
     engineVersion: args.engineVersion,
     knowledgeVersion: args.knowledgeVersion,
   };
