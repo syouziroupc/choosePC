@@ -19,7 +19,7 @@ type ScheduledHandler = (controller: ScheduledController, env: Env, ctx: Executi
 
 const appFetch = app.fetch as unknown as AppFetch;
 const scheduled = production.scheduled as unknown as ScheduledHandler;
-const API_VERSION = "2026-08-20-a8-single-network-v8";
+const API_VERSION = "2026-08-24-price-fit-v9";
 const CLIENT_HEADER = "x-choosepc-client";
 const SESSION_COOKIE = "pc_assist_sid";
 const PUBLIC_API_PREFIX = "/api/v1/";

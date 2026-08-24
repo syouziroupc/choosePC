@@ -87,8 +87,35 @@ export interface ScoreVector { hardware: number; fit: number; value: number; con
 export interface HardConstraint { code: string; severity: "warning" | "critical"; known: boolean; message?: string }
 export interface ReasonDetail { code: string; kind: "positive" | "neutral" | "warning" | "critical"; message: string; metric?: RequirementMetric; actual?: number | null; minimum?: number | null; preferred?: number | null }
 
+export type PriceVerdict = "good" | "fair" | "high" | "unknown";
+export type PerformanceFitVerdict = "sufficient" | "borderline" | "insufficient" | "unknown";
+export interface WeaknessDetail {
+  code: string;
+  metric?: RequirementMetric;
+  label: string;
+  severity: "critical" | "warning" | "notice";
+  message: string;
+  actual?: number | null;
+  minimum?: number | null;
+  preferred?: number | null;
+}
+export interface PurchaseAssessment {
+  price: {
+    score: number | null;
+    verdict: PriceVerdict;
+    marketAvailable: boolean;
+    fairPriceJpy?: number | null;
+  };
+  performanceFit: {
+    score: number | null;
+    verdict: PerformanceFitVerdict;
+  };
+  weaknesses: WeaknessDetail[];
+}
+
 export interface EvaluationResult {
   scores: ScoreVector & { overall: number };
+  purchaseAssessment: PurchaseAssessment;
   decision: Decision;
   reasons: string[];
   reasonDetails: ReasonDetail[];

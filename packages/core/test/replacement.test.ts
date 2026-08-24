@@ -7,7 +7,21 @@ import type { EvaluationResult, HardConstraint, NormalizedPC } from "../src/type
 
 const pc: NormalizedPC = { category: "general_laptop", memory: { sizeGb: 8, upgradeable: true }, storage: [{ kind: "nvme_ssd", sizeGb: 256 }], condition: { type: "used", defects: [] }, commerce: {}, confidence: {}, extra: { upgradeabilityScore: 80 } };
 function ev(fit: number, longevity: number, risk = 10, constraints: HardConstraint[] = []): EvaluationResult {
-  return { scores: { overall: fit, hardware: fit, fit, value: 50, condition: 70, longevity, risk, confidence: 85 }, decision: "fair", reasons: [], reasonDetails: [], warnings: [], constraints, engineVersion: "x", knowledgeVersion: "x" };
+  return {
+    scores: { overall: fit, hardware: fit, fit, value: 50, condition: 70, longevity, risk, confidence: 85 },
+    purchaseAssessment: {
+      price: { score: null, verdict: "unknown", marketAvailable: false },
+      performanceFit: { score: fit, verdict: fit >= 75 ? "sufficient" : fit >= 60 ? "borderline" : "insufficient" },
+      weaknesses: [],
+    },
+    decision: "fair",
+    reasons: [],
+    reasonDetails: [],
+    warnings: [],
+    constraints,
+    engineVersion: "x",
+    knowledgeVersion: "x",
+  };
 }
 
 describe("replacement assistant", () => {

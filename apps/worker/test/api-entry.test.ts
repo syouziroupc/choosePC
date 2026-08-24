@@ -73,6 +73,8 @@ function context() {
   return { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
 }
 
+const API_VERSION = "2026-08-24-price-fit-v9";
+
 describe("API backend with workers.dev operations console", () => {
   it("serves the operations console at the worker root", async () => {
     const { env } = makeEnv();
@@ -111,7 +113,7 @@ describe("API backend with workers.dev operations console", () => {
     expect(body.persistenceConfigured).toBe(false);
     expect(body.operationsConsole).toBe("https://choosepc.example/");
     expect(body.selectedAffiliateNetwork).toBe("a8");
-    expect(body.apiVersion).toBe("2026-08-20-a8-single-network-v8");
+    expect(body.apiVersion).toBe(API_VERSION);
   });
 
   it("exposes public A8 readiness status to www.szpc.jp without exposing credentials", async () => {
@@ -129,7 +131,7 @@ describe("API backend with workers.dev operations console", () => {
     };
     expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBe("https://www.szpc.jp");
-    expect(response.headers.get("x-choosepc-api-version")).toBe("2026-08-20-a8-single-network-v8");
+    expect(response.headers.get("x-choosepc-api-version")).toBe(API_VERSION);
     expect(body.network).toEqual(expect.objectContaining({ id: "a8", name: "A8.net", selected: true }));
     expect(body.persistenceConfigured).toBe(true);
     expect(body.pausedPrograms).toBe(1);
