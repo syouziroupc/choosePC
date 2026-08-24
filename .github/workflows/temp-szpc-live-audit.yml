@@ -1,0 +1,152 @@
+name: temp-szpc-live-audit
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/temp-szpc-live-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  live-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SITE: https://www.szpc.jp
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Wait for szpc choosePC relay deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            rm -f /tmp/meta.json /tmp/meta.headers
+            code="$(curl --silent --show-error --max-time 10 -D /tmp/meta.headers -o /tmp/meta.json -w '%{http_code}' \
+              -H 'Cache-Control: no-cache' "${SITE}/api/choosepc/v1?audit=${GITHUB_SHA}" || true)"
+            if [ "$code" = "200" ] && grep -qi '^x-szpc-api-proxy: choosepc-public-v1' /tmp/meta.headers; then
+              if node <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/meta.json', 'utf8'));
+          if (body.service !== 'choosePC' || body.mode !== 'api') process.exit(1);
+          NODE
+              then
+                echo "szpc choosePC relay is live on attempt ${attempt}"
+                exit 0
+              fi
+            fi
+            sleep 2
+          done
+          echo 'Relay did not become healthy.'
+          echo '--- headers ---'
+          cat /tmp/meta.headers || true
+          echo '--- body ---'
+          cat /tmp/meta.json || true
+          exit 1
+
+      - name: Verify public pages never enter sales-system
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in products partners; do
+            headers="/tmp/${path}.headers"
+            body="/tmp/${path}.html"
+            effective="$(curl --fail --silent --show-error --location --max-time 20 \
+              -H 'Cache-Control: no-cache' -D "$headers" -o "$body" -w '%{url_effective}' \
+              "${SITE}/${path}/?audit=${GITHUB_SHA}")"
+            echo "${path}: ${effective}"
+            case "$effective" in
+              "${SITE}/${path}/"*|"${SITE}/${path}"*) ;;
+              *) echo "Unexpected final URL: ${effective}"; exit 1;;
+            esac
+            if grep -qi 'sales-system\.syouziroupc\.workers\.dev' "$headers" "$body"; then
+              echo "sales-system reference detected in ${path}"
+              exit 1
+            fi
+          done
+
+      - name: Verify purchase evaluation POST through szpc
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/evaluate.json <<'JSON'
+          {
+            "pc": {
+              "category": "general_laptop",
+              "cpu": {"raw": "Intel Core i5-1235U", "confidence": 95},
+              "gpu": {"raw": "Intel Iris Xe Graphics", "variant": "integrated", "confidence": 95},
+              "memory": {"sizeGb": 16, "upgradeable": false},
+              "storage": [{"kind": "nvme_ssd", "sizeGb": 512}],
+              "display": {"refreshHz": 60},
+              "mobility": {"weightKg": 1.2},
+              "condition": {"type": "used", "grade": "A", "batteryHealthPct": 85, "defects": []},
+              "commerce": {"priceJpy": 45000, "warrantyDays": 90},
+              "confidence": {},
+              "extra": {"upgradeabilityScore": 50}
+            },
+            "useCase": "office",
+            "market": {"fairPriceJpy": 50000, "source": "user_estimate", "sampleCount": 1, "confidence": 40, "ageDays": 0}
+          }
+          JSON
+          code="$(curl --silent --show-error --max-time 20 -D /tmp/evaluate.headers -o /tmp/evaluate.out -w '%{http_code}' \
+            -H 'Cache-Control: no-cache' -H 'Content-Type: application/json' \
+            -H 'X-ChoosePC-Client: 123e4567-e89b-42d3-a456-426614174000' \
+            --data-binary @/tmp/evaluate.json "${SITE}/api/choosepc/v1/evaluate")"
+          cat /tmp/evaluate.out
+          test "$code" = "200"
+          grep -qi '^x-szpc-api-proxy: choosepc-public-v1' /tmp/evaluate.headers
+          node <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/evaluate.out', 'utf8'));
+          if (!body.result || typeof body.result !== 'object') process.exit(1);
+          NODE
+
+      - name: Capture live desktop and mobile screenshots
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p visual-artifacts
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$CHROME" ]; then
+            echo 'No Chrome/Chromium executable on runner'
+            exit 1
+          fi
+          for path in pc-check products partners; do
+            "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+              --virtual-time-budget=8000 --window-size=1440,2400 \
+              --screenshot="$PWD/visual-artifacts/${path}-desktop.png" \
+              "${SITE}/${path}/?audit=${GITHUB_SHA}"
+            "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+              --virtual-time-budget=8000 --window-size=390,3000 \
+              --screenshot="$PWD/visual-artifacts/${path}-mobile.png" \
+              "${SITE}/${path}/?audit=${GITHUB_SHA}"
+          done
+          "$CHROME" --headless --no-sandbox --disable-gpu --virtual-time-budget=10000 \
+            --dump-dom "${SITE}/pc-check/?audit=${GITHUB_SHA}" > /tmp/pc-check-dom.html
+          test "$(find visual-artifacts -name '*.png' -size +10k | wc -l)" -eq 6
+          grep -q 'PC購入判定API' /tmp/pc-check-dom.html || grep -q 'choosePC' /tmp/pc-check-dom.html
+          if grep -qi 'sales-system\.syouziroupc\.workers\.dev' /tmp/pc-check-dom.html; then
+            echo 'Unexpected sales-system reference in pc-check DOM'
+            exit 1
+          fi
+
+      - name: Upload live screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: szpc-live-audit-${{ github.sha }}
+          path: |
+            visual-artifacts/*.png
+            /tmp/meta.headers
+            /tmp/meta.json
+            /tmp/evaluate.headers
+            /tmp/evaluate.out
+            /tmp/products.headers
+            /tmp/partners.headers
+            /tmp/pc-check-dom.html
+          if-no-files-found: warn
+          retention-days: 7
