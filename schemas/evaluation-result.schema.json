@@ -3,7 +3,7 @@
   "$id": "https://pc-assist.invalid/schemas/evaluation-result.schema.json",
   "title": "EvaluationResult",
   "type": "object",
-  "required": ["scores", "decision", "reasons", "warnings", "engineVersion", "knowledgeVersion"],
+  "required": ["scores", "purchaseAssessment", "decision", "reasons", "reasonDetails", "warnings", "constraints", "engineVersion", "knowledgeVersion"],
   "properties": {
     "scores": {
       "type": "object",
@@ -20,9 +20,57 @@
       },
       "additionalProperties": false
     },
+    "purchaseAssessment": {
+      "type": "object",
+      "required": ["price", "performanceFit", "weaknesses"],
+      "properties": {
+        "price": {
+          "type": "object",
+          "required": ["score", "verdict", "marketAvailable"],
+          "properties": {
+            "score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            "verdict": {"enum": ["good", "fair", "high", "unknown"]},
+            "marketAvailable": {"type": "boolean"},
+            "fairPriceJpy": {"type": ["number", "null"], "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "performanceFit": {
+          "type": "object",
+          "required": ["score", "verdict"],
+          "properties": {
+            "score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            "verdict": {"enum": ["sufficient", "borderline", "insufficient", "unknown"]}
+          },
+          "additionalProperties": false
+        },
+        "weaknesses": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["code", "label", "severity", "message"],
+            "properties": {
+              "code": {"type": "string"},
+              "metric": {"type": "string"},
+              "label": {"type": "string"},
+              "severity": {"enum": ["critical", "warning", "notice"]},
+              "message": {"type": "string"},
+              "actual": {"type": ["number", "null"]},
+              "minimum": {"type": ["number", "null"]},
+              "preferred": {"type": ["number", "null"]}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "decision": {"enum": ["strong_buy", "buy", "fair", "overpriced", "avoid", "insufficient_data"]},
     "reasons": {"type": "array", "items": {"type": "string"}},
+    "reasonDetails": {"type": "array", "items": {"type": "object"}},
     "warnings": {"type": "array", "items": {"type": "string"}},
+    "constraints": {"type": "array", "items": {"type": "object"}},
     "engineVersion": {"type": "string"},
     "knowledgeVersion": {"type": "string"}
   },
