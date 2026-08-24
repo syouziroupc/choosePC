@@ -1,0 +1,2 @@
+Temporary PR trigger for encrypted 100-row D1 audit export. No plaintext prospect data and no email delivery.
+Attempt 4: execute exact ChatGPT-reviewed 100-row BLOCK batch and verify counts.
