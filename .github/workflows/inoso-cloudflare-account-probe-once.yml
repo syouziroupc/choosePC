@@ -1,0 +1,52 @@
+name: INOSO Cloudflare account probe once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inoso-cloudflare-account-probe-once.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe account and zone access without mutation
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ZONE_ID: 7b3905101c71c6f8c189a1e4a6d3e628
+          HOSTNAME: inoso.szpc.jp
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          mkdir -p evidence
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          printf 'configured_account_id=%s\n' "$CLOUDFLARE_ACCOUNT_ID" | tee evidence/configured-account.txt
+          for spec in \
+            "accounts|https://api.cloudflare.com/client/v4/accounts?per_page=100" \
+            "zones|https://api.cloudflare.com/client/v4/zones?name=szpc.jp&per_page=100" \
+            "dns|https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$HOSTNAME&per_page=100" \
+            "domains|https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" \
+            "pages|https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects"; do
+            name="${spec%%|*}"; url="${spec#*|}"
+            code="$(curl -sS -o "evidence/$name.json" -w '%{http_code}' "${auth[@]}" "$url" || true)"
+            echo "$name http=$code" | tee -a evidence/status.txt
+            jq '{success,errors,result}' "evidence/$name.json" | tee "evidence/$name-summary.json" || cat "evidence/$name.json"
+          done
+          jq -r '.result[]? | [.id,.name] | @tsv' evidence/accounts.json 2>/dev/null | tee evidence/accounts.tsv || true
+          jq -r '.result[]? | [.id,.name,.account.id,.account.name] | @tsv' evidence/zones.json 2>/dev/null | tee evidence/zones.tsv || true
+          jq -r '.result[]? | [.id,.type,.name,.content,.proxied] | @tsv' evidence/dns.json 2>/dev/null | tee evidence/dns.tsv || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inoso-cloudflare-account-probe-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 3
