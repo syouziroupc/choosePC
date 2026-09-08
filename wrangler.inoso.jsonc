@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "inoso-mosaic-edge",
+  "main": "./inoso-edge-worker.js",
+  "compatibility_date": "2026-09-08",
+  "workers_dev": true,
+  "preview_urls": true,
+  "routes": [
+    {
+      "pattern": "inoso.szpc.jp/assets/images/truck.webp*",
+      "zone_id": "7b3905101c71c6f8c189a1e4a6d3e628"
+    },
+    {
+      "pattern": "inoso.szpc.jp/assets/images/permit-board.webp*",
+      "zone_id": "7b3905101c71c6f8c189a1e4a6d3e628"
+    }
+  ],
+  "observability": { "enabled": true }
+}
