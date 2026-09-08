@@ -7,12 +7,8 @@
   "preview_urls": true,
   "routes": [
     {
-      "pattern": "inoso.szpc.jp/assets/images/truck.webp*",
-      "zone_id": "7b3905101c71c6f8c189a1e4a6d3e628"
-    },
-    {
-      "pattern": "inoso.szpc.jp/assets/images/permit-board.webp*",
-      "zone_id": "7b3905101c71c6f8c189a1e4a6d3e628"
+      "pattern": "inoso.szpc.jp/*",
+      "zone_name": "szpc.jp"
     }
   ],
   "observability": { "enabled": true }
