@@ -1,19 +1,38 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "inoso-mosaic-edge",
-  "main": "./inoso-edge-worker.js",
-  "compatibility_date": "2026-09-08",
+  "name": "choosepc",
+  "main": "./apps/worker/src/api-entry.ts",
+  "compatibility_date": "2026-07-29",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": true,
-  "preview_urls": true,
-  "routes": [
+  "browser": {
+    "binding": "BROWSER"
+  },
+  "d1_databases": [
     {
-      "pattern": "inoso.szpc.jp/assets/images/truck.webp*",
-      "zone_name": "szpc.jp"
-    },
-    {
-      "pattern": "inoso.szpc.jp/assets/images/permit-board.webp*",
-      "zone_name": "szpc.jp"
+      "binding": "DB",
+      "database_name": "choosepc-production",
+      "database_id": "eb1f9cc2-a0d7-467e-b139-939c6d56130d",
+      "migrations_dir": "migrations"
     }
   ],
-  "observability": { "enabled": true }
+  "secrets": {
+    "required": [
+      "MARKET_INGEST_TOKEN",
+      "OFFER_INGEST_TOKEN",
+      "COMMERCIAL_ADMIN_TOKEN",
+      "CONVERSION_IMPORT_TOKEN"
+    ]
+  },
+  "ratelimits": [
+    {
+      "name": "URL_INSPECT_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 8, "period": 60 }
+    }
+  ],
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 }
 }
