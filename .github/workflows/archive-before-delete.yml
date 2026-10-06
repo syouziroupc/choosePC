@@ -1,0 +1,59 @@
+name: archive-before-delete
+
+on:
+  push:
+    paths:
+      - '.github/workflows/archive-before-delete.yml'
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build verified backup of original repository state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIGINAL_SHA='7722cefb19a1525679e50a57f859623098682373'
+          BACKUP_DIR='choosePC-backup-2026-10-07'
+          mkdir -p "$BACKUP_DIR"
+
+          git cat-file -e "${ORIGINAL_SHA}^{commit}"
+          git archive --format=zip --prefix='choosePC-main-2026-10-07/' "$ORIGINAL_SHA" > "$BACKUP_DIR/choosePC-main-source-2026-10-07.zip"
+
+          git branch archive-original "$ORIGINAL_SHA"
+          git bundle create "$BACKUP_DIR/choosePC-original-history.bundle" archive-original --tags
+          git bundle verify "$BACKUP_DIR/choosePC-original-history.bundle" > "$BACKUP_DIR/bundle-verify.txt" 2>&1
+
+          {
+            echo 'Repository: syouziroupc/choosePC'
+            echo 'Backup date: 2026-10-07'
+            echo "Original main commit: $ORIGINAL_SHA"
+            echo "Original tree: $(git rev-parse ${ORIGINAL_SHA}^{tree})"
+            echo "Original commit count: $(git rev-list --count $ORIGINAL_SHA)"
+            echo 'Contents:'
+            echo '  choosePC-main-source-2026-10-07.zip  - exact working-tree snapshot at original main commit'
+            echo '  choosePC-original-history.bundle     - Git history up to original main commit plus tags'
+            echo '  bundle-verify.txt                    - git bundle verification output'
+          } > "$BACKUP_DIR/BACKUP-README.txt"
+
+          (cd "$BACKUP_DIR" && sha256sum choosePC-main-source-2026-10-07.zip choosePC-original-history.bundle bundle-verify.txt BACKUP-README.txt > SHA256SUMS.txt)
+          zip -q -r choosePC-full-backup-2026-10-07.zip "$BACKUP_DIR"
+          unzip -t choosePC-full-backup-2026-10-07.zip
+          sha256sum choosePC-full-backup-2026-10-07.zip > choosePC-full-backup-2026-10-07.zip.sha256
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: choosePC-full-backup-2026-10-07
+          path: |
+            choosePC-full-backup-2026-10-07.zip
+            choosePC-full-backup-2026-10-07.zip.sha256
+          retention-days: 7
+          if-no-files-found: error
